@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import IsManager
 
 from . import selectors, services
+from .models import Property, Unit
 from .serializers import (
     AttachTenantSerializer,
     PropertySerializer,
@@ -26,6 +27,8 @@ class PropertyViewSet(
     permission_classes = [IsManager]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):  # schema generation
+            return Property.objects.none()
         return selectors.properties_for_manager(self.request.user)
 
     def perform_create(self, serializer):
@@ -42,11 +45,13 @@ class UnitListCreateView(generics.ListCreateAPIView):
         )
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Unit.objects.none()
         return self.get_property().units.all()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        if "property_id" in self.kwargs:  # absent during schema generation
+        if not getattr(self, "swagger_fake_view", False):
             context["property"] = self.get_property()
         return context
 
