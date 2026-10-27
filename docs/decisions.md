@@ -117,3 +117,47 @@ Each entry gives the choice, the alternatives considered and the reason.
 ## D21. Unit label race (review fix A4)
 - **Choice:** Unit creation moved into `properties.services.create_unit`. An `IntegrityError` from the unique constraint (raised inside a savepoint) becomes a 400 `validation_error` on `label`.
 - **Reason:** It's the same pattern as `attach_tenant`. The serializer's pre-check gives the friendly common-case error; the constraint is the real guarantee.
+
+## D22. `seed_bulk` design
+- **Choice:**
+  - `bulk_create` with a fixed `random.Random(seed)`. All rows are tagged with the seed (emails `@bulk<seed>.example`, property names `Bulk <seed> Property NN`), so the command is idempotent per seed.
+  - It refuses to run unless DEBUG is True or `--force` is passed.
+  - Users get an unusable password, so no secret is involved.
+  - Distributions are documented in the command's docstring.
+  - Open requests get recent `created_at` values (exponential, mean 8 days). If they were spread uniformly over 12 months, nearly every open request would be months overdue.
+- **Verification:** `tests/test_seed_bulk.py` seeds 400 requests and checks:
+  - every event chain is legal per the transition table and matches the final status;
+  - timestamps are ordered and never in the future;
+  - workflow fields match the status;
+  - actors have the right roles;
+  - creators held a tenancy when they reported;
+  - no tenant ever posted an internal comment;
+  - the command is idempotent.
+- **Real run:** 10k requests in 14.1 s. Measured: closed 44.5%, resolved 14.9%, cancelled 9.7%; priority 10.1 / 30.4 / 59.5%; 4.3% ended tenancies; 17% of all requests overdue.
+- **Known skew:** Pareto(1.2) contractor weights give one contractor 3,761 of the ~8,600 assigned requests. That's useful as a stress subject, but heavier than most real portfolios.
+
+## D23. How performance was measured and optimized
+- **Benchmark:** `scripts/benchmark.py`, run in-process with the Django test client, with DEBUG forced off. It reports queries plus p50/p95/max over 200 timed runs after 20 warmup runs, then appends to `docs/benchmarks.md` and writes JSON for comparisons. The baseline was committed (`1422f53`) before any optimization.
+- **Noise:** a repeat run of the same code is reported next to each table. p50 is stable to within about 7–12%, while p95 on this laptop can move 40%+, so conclusions use p50 and query counts.
+- **Optimizations:**
+  - `select_related("unit")` in the visibility selector.
+  - `lock_request()` = `select_for_update(of=("self",)).select_related("unit__property")`. `of=self` locks only the request row, not the unit/property rows it joins. Permission checks now run the free manager check before the tenancy query.
+  - Three indexes, each kept only after a rolled-back EXPLAIN (ANALYZE) experiment showed a full scan + sort turning into an ordered index scan. One candidate was rejected (partial open-SLA index).
+- **Not done:** an expression index for `ordering=priority` (8.5 ms, a CASE sort). It hasn't been shown to matter.
+
+## D24. Throttling and the shared cache
+- **Choice:** DRF `ScopedRateThrottle` with three scopes:
+  - `login`: 10/min per client IP
+  - `token_refresh`: 10/min per client IP
+  - `writes`: 60/min per user, covering POST/PATCH on requests, transitions and comments; GETs are never throttled
+
+  Rates come from env vars. A 429 uses the standard error shape with `details.retry_after_seconds`, and DRF sets `Retry-After`.
+- **Cache:** `CACHES` uses `DatabaseCache` in base settings. Gunicorn runs several worker processes, and the per-process default cache (LocMem) would give each worker its own counter, multiplying the real limit. The database cache is shared and needs no extra service (no Redis on a free tier). This was verified: two separate processes each made 6 failed logins from one IP, and the second process got 429 on its 5th attempt (11th overall). Tests use LocMemCache, cleared before and after every test by an autouse fixture.
+- **Client IP:** `NUM_PROXIES` comes from env and defaults to 0, meaning `REMOTE_ADDR` is used and `X-Forwarded-For` is ignored, so XFF can't be spoofed to dodge the limit (tested). Behind a proxy it must be set to the number of proxies (Part E).
+
+## D25. Stats endpoint
+- **Choice:** `GET /api/stats/`, managers only, scoped to their properties. Optional filters: `property`, `created_after`, `created_before` (inclusive bounds, filtering on `created_at`).
+  - **Median:** a small ORM `Aggregate` renders `percentile_cont(0.5) WITHIN GROUP (ORDER BY resolved_at - created_at)` over an interval, so Django returns a `timedelta`, converted to hours and rounded to 2 decimals. No SQL is built from strings.
+  - **Population:** requests currently resolved or closed with `resolved_at` set. Cancelled and reopened-but-not-re-resolved requests are excluded.
+  - **Out-of-scope `property`:** returns zeros rather than 404, the same as the list filters (D11).
+- **Cost on the 10k data:** 4 queries (auth, open counts, medians, overdue count), ~42 ms average in-process.

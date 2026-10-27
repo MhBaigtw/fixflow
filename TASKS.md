@@ -45,8 +45,6 @@
 - [x] Repo created + pushed (https://github.com/MhBaigtw/fixflow)
 - [x] CI result confirmed (green on 8ad1a3a after fixing an order-dependent race test)
 
-
-
 ## Checkpoint 2
 
 ### Part A: Architect review fixes
@@ -57,20 +55,20 @@
 - [x] A5 Concurrency test docstring
 
 ### Part B: Baseline measurement (Phase 3)
-- [ ] seed_bulk (10,000 requests, realistic distributions, idempotent per --seed)
-- [ ] scripts/benchmark.py (queries + p50/p95/max per role/endpoint)
-- [ ] docs/benchmarks.md "Baseline" committed before any optimization
+- [x] seed_bulk (10,000 requests, realistic distributions, idempotent per --seed)
+- [x] scripts/benchmark.py (queries + p50/p95/max per role/endpoint)
+- [x] docs/benchmarks.md "Baseline" committed before any optimization
 
 ### Part C: Optimize and re-measure (Phase 3)
-- [ ] Remove N+1 (select_related / prefetch), cheaper transition permission checks
-- [ ] Indexes only where EXPLAIN (ANALYZE, BUFFERS) shows a benefit
-- [ ] "Optimized" benchmark + before/after comparison
-- [ ] Query-count regression tests
+- [x] Remove N+1 (select_related / prefetch), cheaper transition permission checks
+- [x] Indexes only where EXPLAIN (ANALYZE, BUFFERS) shows a benefit
+- [x] "Optimized" benchmark + before/after comparison
+- [x] Query-count regression tests
 
 ### Part D: Hardening and stats (Phase 3)
-- [ ] Scoped throttling (login/refresh per IP, writes per user), env-configurable
-- [ ] DatabaseCache for shared throttle counters; tests isolated
-- [ ] GET /api/stats/ (open by status, overdue, median hours to resolve per category)
+- [x] Scoped throttling (login/refresh per IP, writes per user), env-configurable
+- [x] DatabaseCache for shared throttle counters; tests isolated
+- [x] GET /api/stats/ (open by status, overdue, median hours to resolve per category)
 - [ ] Full verification, push (ask first), CI green
 
 ### Part E: Deploy prep (Phase 4)

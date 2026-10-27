@@ -134,3 +134,13 @@ Phase 2 querysets are written plainly on purpose: no `select_related`, `prefetch
   - Every priority change recomputes `sla_due_at` from `created_at`.
 - **Audit:** RequestEvent gains `event_type` (`status_change` | `edit`) and `changes` (`{"field": {"from", "to"}}`). Every PATCH that changes something writes one `edit` event; a no-op PATCH writes none. Triage with a priority change records the change in its `status_change` event.
 - **Units:** a racing duplicate (property, label) create returns 400, not 500.
+
+## Phase 3 as built
+
+- `seed_bulk` (DEBUG-only unless `--force`, idempotent per `--seed`), `scripts/benchmark.py`, `scripts/explain_queries.py`, `scripts/index_experiment.py`. Results are in `docs/benchmarks.md`.
+- Throttling scopes, all set from env:
+  - `login`: 10/min per IP
+  - `token_refresh`: 10/min per IP
+  - `writes`: 60/min per user
+  - 429 uses the standard error shape, code `throttled`, plus `Retry-After`. Counters live in the database cache (shared across workers). `NUM_PROXIES` sets how the client IP is found behind proxies.
+- `GET /api/stats/` (managers): `open_by_status`, `overdue`, `median_hours_to_resolve` per category. Filters: `property`, `created_after`, `created_before`.
