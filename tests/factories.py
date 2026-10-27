@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 import factory
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.maintenance.models import MaintenanceRequest
 from apps.properties.models import Property, Tenancy, Unit
 
 PASSWORD = "test-pass-123"
@@ -62,3 +65,21 @@ class TenancyFactory(factory.django.DjangoModelFactory):
     tenant = factory.SubFactory(TenantFactory)
     start_date = factory.LazyFunction(timezone.localdate)
     end_date = None
+
+
+class MaintenanceRequestFactory(factory.django.DjangoModelFactory):
+    """Inserts a request row directly, in any state. Writes no events: use the
+    services when a test needs the audit trail."""
+
+    class Meta:
+        model = MaintenanceRequest
+
+    unit = factory.SubFactory(UnitFactory)
+    created_by = factory.SubFactory(TenantFactory)
+    title = factory.Sequence(lambda n: f"Request {n}")
+    description = "Something is broken."
+    category = MaintenanceRequest.Category.PLUMBING
+    priority = MaintenanceRequest.Priority.ROUTINE
+    status = MaintenanceRequest.Status.SUBMITTED
+    created_at = factory.LazyFunction(timezone.now)
+    sla_due_at = factory.LazyAttribute(lambda o: o.created_at + timedelta(days=7))
