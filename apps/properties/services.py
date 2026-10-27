@@ -5,9 +5,19 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts.models import User
 from apps.core.exceptions import Conflict
 
-from .models import Tenancy
+from .models import Tenancy, Unit
 
 DUPLICATE_TENANCY = "This tenant already has an active tenancy on this unit."
+DUPLICATE_UNIT = "A unit with this label already exists here."
+
+
+def create_unit(*, property, label):
+    try:
+        # The serializer pre-checks duplicates; this catches a create that raced past it.
+        with transaction.atomic():
+            return Unit.objects.create(property=property, label=label)
+    except IntegrityError as exc:
+        raise ValidationError({"label": [DUPLICATE_UNIT]}) from exc
 
 
 def attach_tenant(*, unit, email, start_date=None):

@@ -105,6 +105,7 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.maintenance.models.MaintenanceRequest.Status",
+        "PriorityEnum": "apps.maintenance.models.MaintenanceRequest.Priority",
     },
 }
 

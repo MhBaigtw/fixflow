@@ -1,7 +1,19 @@
-"""Racing transitions on one request: exactly one wins, the other gets 409.
+"""Racing transitions on one request.
+
+Every race asserts: exactly one request succeeds, exactly one RequestEvent is
+written, and the loser gets the response that is correct for the status the
+winner committed. The loser is judged after the lock is released, so:
+- if the winner's new status makes the loser's move illegal -> 409 invalid_transition
+  (close vs reopen, double resolve, cancel winning over triage);
+- if the move is still legal from the new status but not for the loser's role ->
+  403 permission_denied (triage winning: the tenant's cancel from triaged is
+  manager-only).
+One test forces each ordering of triage vs cancel; another proves the loser
+actually blocked on the row lock (its 409 took at least the winner's 0.5s hold).
 
 These run with real threads, each on its own DB connection, against committed data
-(transactional DB), so Postgres row locks are actually exercised.
+(transactional DB), so Postgres row locks are actually exercised. All of them fail
+if select_for_update() is removed from apply_transition.
 """
 
 import threading

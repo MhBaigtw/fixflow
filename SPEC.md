@@ -123,3 +123,14 @@ Phase 2 querysets are written plainly on purpose: no `select_related`, `prefetch
 - Demo walkthrough script that runs against any base URL.
 - Full README with a Mermaid architecture diagram.
 - Resume bullets in `docs/resume-bullets.md`, each linked to its measured evidence.
+
+## Amendments at Checkpoint 2 (architect review)
+
+- **Login:** `auth/token/` accepts the email in any case and with surrounding whitespace.
+- **Priority:** MaintenanceRequest gains `requested_priority` (the tenant's choice, set at creation). `priority` is the working priority and drives the SLA.
+  - The creating tenant may PATCH title, description, category and priority while submitted. A priority change updates both fields.
+  - The property manager may PATCH `priority` only, while submitted, triaged, assigned or in_progress. Other fields from a manager are 400; a forbidden status is 409 `priority_not_editable`.
+  - `triage` accepts an optional `priority`.
+  - Every priority change recomputes `sla_due_at` from `created_at`.
+- **Audit:** RequestEvent gains `event_type` (`status_change` | `edit`) and `changes` (`{"field": {"from", "to"}}`). Every PATCH that changes something writes one `edit` event; a no-op PATCH writes none. Triage with a priority change records the change in its `status_change` event.
+- **Units:** a racing duplicate (property, label) create returns 400, not 500.

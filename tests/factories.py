@@ -80,6 +80,7 @@ class MaintenanceRequestFactory(factory.django.DjangoModelFactory):
     description = "Something is broken."
     category = MaintenanceRequest.Category.PLUMBING
     priority = MaintenanceRequest.Priority.ROUTINE
+    requested_priority = factory.LazyAttribute(lambda o: o.priority)
     status = MaintenanceRequest.Status.SUBMITTED
     created_at = factory.LazyFunction(timezone.now)
     sla_due_at = factory.LazyAttribute(lambda o: o.created_at + timedelta(days=7))

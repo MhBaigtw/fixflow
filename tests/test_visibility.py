@@ -268,8 +268,9 @@ def test_creator_edits_while_submitted(wf, client_for):
     assert (req.title, req.description, req.category) == ("New title", "More detail", "electrical")
 
 
+# The manager's PATCH rules (priority only) are tested in test_edits.py.
 @pytest.mark.parametrize(
-    "actor,status", [("roommate", 403), ("manager", 403), ("outsider", 404), ("contractor", 404)]
+    "actor,status", [("roommate", 403), ("outsider", 404), ("contractor", 404)]
 )
 def test_only_creator_edits(wf, client_for, actor, status):
     req = wf.make()

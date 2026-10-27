@@ -45,19 +45,43 @@
 - [x] Repo created + pushed (https://github.com/MhBaigtw/fixflow)
 - [x] CI result confirmed (green on 8ad1a3a after fixing an order-dependent race test)
 
-## Phase 3: Measure and harden (not started)
-- [ ] seed_bulk (10,000 requests, realistic distributions)
-- [ ] Benchmark script: queries/request, p50/p95 per role for list + detail
-- [ ] docs/benchmarks.md baseline (hardware, commit, command)
-- [ ] Optimize (select_related/prefetch_related, composite indexes)
-- [ ] Re-measure + record
-- [ ] Query-count regression tests
-- [ ] Scoped throttling on login and writes
-- [ ] Manager stats endpoint
 
-## Phase 4: Ship (not started)
-- [ ] Check Render + Neon free-tier terms
-- [ ] Deploy (Humayun creates accounts / enters secrets)
-- [ ] Walkthrough script against any base URL
-- [ ] Full README + Mermaid architecture diagram
-- [ ] docs/resume-bullets.md linked to evidence
+
+## Checkpoint 2
+
+### Part A: Architect review fixes
+- [x] A1 Case-insensitive login (custom token serializer)
+- [x] A2 requested_priority vs priority; manager may change priority (PATCH + triage)
+- [x] A3 Edit events (event_type, changes); no-op PATCH writes nothing
+- [x] A4 Unit label race -> 400
+- [x] A5 Concurrency test docstring
+
+### Part B: Baseline measurement (Phase 3)
+- [ ] seed_bulk (10,000 requests, realistic distributions, idempotent per --seed)
+- [ ] scripts/benchmark.py (queries + p50/p95/max per role/endpoint)
+- [ ] docs/benchmarks.md "Baseline" committed before any optimization
+
+### Part C: Optimize and re-measure (Phase 3)
+- [ ] Remove N+1 (select_related / prefetch), cheaper transition permission checks
+- [ ] Indexes only where EXPLAIN (ANALYZE, BUFFERS) shows a benefit
+- [ ] "Optimized" benchmark + before/after comparison
+- [ ] Query-count regression tests
+
+### Part D: Hardening and stats (Phase 3)
+- [ ] Scoped throttling (login/refresh per IP, writes per user), env-configurable
+- [ ] DatabaseCache for shared throttle counters; tests isolated
+- [ ] GET /api/stats/ (open by status, overdue, median hours to resolve per category)
+- [ ] Full verification, push (ask first), CI green
+
+### Part E: Deploy prep (Phase 4)
+- [ ] docs/deploy.md: current Render + Neon free-tier terms with links
+- [ ] render.yaml / settings for deploy (SSL DB, CSRF origins, CONN_MAX_AGE, cache table)
+- [ ] Click-by-click steps for Humayun
+- [ ] Ask Humayun: demo logins private or public
+- [ ] STOP for Humayun
+
+### Part F: Deploy and finish (Phase 4, after "continue")
+- [ ] Deploy; verify health/docs; seed_demo live; walkthrough against live URL
+- [ ] README: live URL, Mermaid diagram, results table, demo-login choice
+- [ ] docs/resume-bullets.md (every number linked to evidence)
+- [ ] Final verification, push, CI green, HANDOFF Checkpoint 2

@@ -56,7 +56,9 @@ class UnitListCreateView(generics.ListCreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(property=serializer.context["property"])
+        serializer.instance = services.create_unit(
+            property=serializer.context["property"], **serializer.validated_data
+        )
 
 
 class UnitTenancyView(APIView):

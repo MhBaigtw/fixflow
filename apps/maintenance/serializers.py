@@ -22,6 +22,7 @@ class MaintenanceRequestSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "category",
+            "requested_priority",
             "priority",
             "status",
             "assigned_to",
@@ -54,6 +55,9 @@ class MaintenanceRequestCreateSerializer(serializers.ModelSerializer):
 
 
 class MaintenanceRequestUpdateSerializer(serializers.ModelSerializer):
+    """Creating tenant (while submitted): any of these fields. Property manager
+    (submitted to in_progress): `priority` only."""
+
     class Meta:
         model = MaintenanceRequest
         fields = list(EDITABLE_FIELDS)
@@ -74,12 +78,26 @@ class TransitionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=ACTIONS)
     note = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
     contractor_id = serializers.IntegerField(required=False, allow_null=True)
+    priority = serializers.ChoiceField(
+        choices=MaintenanceRequest.Priority.choices,
+        required=False,
+        help_text="Optional, 'triage' only: set the working priority while triaging.",
+    )
 
 
 class RequestEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = RequestEvent
-        fields = ["id", "from_status", "to_status", "actor", "note", "created_at"]
+        fields = [
+            "id",
+            "event_type",
+            "from_status",
+            "to_status",
+            "actor",
+            "note",
+            "changes",
+            "created_at",
+        ]
         read_only_fields = fields
 
 

@@ -85,3 +85,35 @@ Each entry gives the choice, the alternatives considered and the reason.
 ## D17. `seed_demo` lives in `apps/core`
 - **Choice:** One command in `core` seeds users, properties and requests. It resets every demo user's password to `DEMO_PASSWORD` on each run and creates requests only if a request with the same title doesn't exist on that unit.
 - **Reason:** It spans three apps, and running it twice must not duplicate anything (tested).
+
+---
+
+# Checkpoint 2
+
+## D18. Case-insensitive login (review fix A1)
+- **Choice:** `EmailTokenObtainPairSerializer` strips and lowercases the email before SimpleJWT authenticates. `EmailTokenObtainPairView` uses it at `auth/token/`.
+- **Alternatives:** A custom authentication backend with `email__iexact`.
+- **Reason:** Emails are already stored lowercase (D14), so normalising the input is enough. It's the smallest change, touches only the token endpoint, and resolves D14's known limitation.
+
+## D19. Requested vs working priority (review fix A2)
+- **Choice:**
+  - `requested_priority` records what the tenant asked for. `priority` is the working priority that drives the SLA.
+  - **Tenant (creator):** while submitted, a priority PATCH sets both fields.
+  - **Property manager:** may PATCH `priority` only. Any other field gets 400 listing those fields.
+  - **When the manager may change it:** while submitted, triaged, assigned or in_progress. After that it's 409 **`priority_not_editable`**, a new code. The tenant's rule keeps `request_not_editable`, because the two rules differ and clients should be able to tell them apart.
+  - **Triage:** accepts an optional `priority`. Sending `priority` with any other action is 400.
+  - Every priority change recomputes `sla_due_at` from `created_at` (one helper: `services/priority.py::set_priority`).
+- **Test change:** `test_visibility.py::test_only_creator_edits` used to expect 403 for a manager PATCHing `title`. The spec now says that's a 400, so the manager case moved to `test_edits.py::test_manager_can_patch_priority_only`, which asserts the 400. This follows the requirement change; it doesn't weaken the test.
+- **Migration:** `0002` adds `requested_priority` as nullable and copies `priority` into it. `0003` makes it NOT NULL, in a separate migration (its own transaction) so the ALTER runs after the backfill has committed. Verified on the dev DB: 8 of 8 rows backfilled.
+
+## D20. Edits are audited (review fix A3)
+- **Choice:**
+  - `RequestEvent` gains `event_type` (`status_change` | `edit`) and `changes` (JSON: `{"field": {"from", "to"}}`). Datetimes are stored as ISO-8601 strings.
+  - Each PATCH that changes something writes exactly one `edit` event, with `from_status == to_status ==` the current status. The diff includes `requested_priority`, `priority` and `sla_due_at` when they move.
+  - A no-op PATCH writes no event and doesn't save the row, so `updated_at` doesn't move.
+  - Triage with a priority change writes one `status_change` event whose `changes` holds the priority and SLA diff.
+- **Reason:** The audit log now covers everything that affects the SLA or the request's content, not only status changes. Append-only protection is unchanged.
+
+## D21. Unit label race (review fix A4)
+- **Choice:** Unit creation moved into `properties.services.create_unit`. An `IntegrityError` from the unique constraint (raised inside a savepoint) becomes a 400 `validation_error` on `label`.
+- **Reason:** It's the same pattern as `attach_tenant`. The serializer's pre-check gives the friendly common-case error; the constraint is the real guarantee.

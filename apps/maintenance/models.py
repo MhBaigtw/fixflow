@@ -39,6 +39,9 @@ class MaintenanceRequest(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     category = models.CharField(max_length=20, choices=Category.choices)
+    # What the tenant asked for. `priority` is the working priority the manager can
+    # override; it drives the SLA.
+    requested_priority = models.CharField(max_length=20, choices=Priority.choices)
     priority = models.CharField(max_length=20, choices=Priority.choices)
     # Changed only by apps.maintenance.services.transitions.
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED)
@@ -80,9 +83,21 @@ class RequestEventQuerySet(models.QuerySet):
 
 
 class RequestEvent(models.Model):
-    """Append-only audit log of status changes."""
+    """Append-only audit log of status changes and edits.
+
+    status_change: from_status -> to_status, plus any field changes made with it.
+    edit: from_status == to_status == the current status; `changes` holds
+    {"field": {"from": old, "to": new}, ...}.
+    """
+
+    class EventType(models.TextChoices):
+        STATUS_CHANGE = "status_change", "Status change"
+        EDIT = "edit", "Edit"
 
     request = models.ForeignKey(MaintenanceRequest, on_delete=models.PROTECT, related_name="events")
+    event_type = models.CharField(
+        max_length=20, choices=EventType.choices, default=EventType.STATUS_CHANGE
+    )
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="request_events"
     )
@@ -92,6 +107,7 @@ class RequestEvent(models.Model):
     )
     to_status = models.CharField(max_length=20, choices=MaintenanceRequest.Status.choices)
     note = models.TextField(blank=True, default="")
+    changes = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     objects = RequestEventQuerySet.as_manager()

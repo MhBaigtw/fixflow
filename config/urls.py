@@ -2,9 +2,9 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import SimpleRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.accounts.views import MeView
+from apps.accounts.views import EmailTokenObtainPairView, MeView
 from apps.core.views import HealthView
 from apps.maintenance.views import MaintenanceRequestViewSet
 from apps.properties.views import (
@@ -19,7 +19,7 @@ router.register("properties", PropertyViewSet, basename="property")
 router.register("requests", MaintenanceRequestViewSet, basename="request")
 
 api_patterns = [
-    path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain"),
+    path("auth/token/", EmailTokenObtainPairView.as_view(), name="token_obtain"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("me/", MeView.as_view(), name="me"),
     path("health/", HealthView.as_view(), name="health"),

@@ -20,8 +20,11 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.accounts.models import User
 from apps.core.exceptions import Conflict, InvalidTransition
-from apps.maintenance.models import MaintenanceRequest, RequestEvent
+from apps.maintenance.models import MaintenanceRequest
 from apps.properties.models import Tenancy
+
+from .audit import record_event
+from .priority import set_priority
 
 S = MaintenanceRequest.Status
 
@@ -79,9 +82,13 @@ def find_transition(action, from_status):
     return _BY_ACTION_AND_STATUS.get((action, from_status))
 
 
-def apply_transition(*, request_id, actor, action, note="", contractor_id=None):
+def apply_transition(*, request_id, actor, action, note="", contractor_id=None, priority=None):
+    """`priority` is optional and only valid with 'triage': the manager sets the
+    working priority while triaging (recorded in the same event)."""
     if action not in ACTIONS:
         raise ValidationError({"action": [f"Unknown action. Choose one of: {', '.join(ACTIONS)}."]})
+    if priority is not None and action != "triage":
+        raise ValidationError({"priority": ["Only allowed with the 'triage' action."]})
 
     with transaction.atomic():
         # Lock first, then read the status: a concurrent transition that committed
@@ -97,7 +104,10 @@ def apply_transition(*, request_id, actor, action, note="", contractor_id=None):
             raise PermissionDenied("You are not allowed to perform this transition.")
 
         now = timezone.now()
-        if action == "assign":
+        changes = {}
+        if action == "triage" and priority is not None:
+            set_priority(req, priority, changes)
+        elif action == "assign":
             req.assigned_to = _get_contractor(contractor_id)
         elif action == "resolve":
             req.resolved_at = now
@@ -118,14 +128,8 @@ def apply_transition(*, request_id, actor, action, note="", contractor_id=None):
         from_status = req.status
         req.status = transition.to_status
         req.save()
-        record_event(req, actor=actor, from_status=from_status, note=note)
+        record_event(req, actor=actor, from_status=from_status, note=note, changes=changes)
     return req
-
-
-def record_event(req, *, actor, from_status, note=""):
-    return RequestEvent.objects.create(
-        request=req, actor=actor, from_status=from_status, to_status=req.status, note=note
-    )
 
 
 def _get_contractor(contractor_id):
