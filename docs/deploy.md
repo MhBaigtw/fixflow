@@ -81,6 +81,17 @@ these pages before relying on any number.
 - **`NUM_PROXIES` check:** send 11 failed logins, each with a different forged `X-Forwarded-For`. The 11th must be 429. If it isn't, the forged value is being trusted and `NUM_PROXIES` must be lowered. (If it's too *low*, every client shares one bucket. That can't be seen from a single machine: optional check below.)
 - **Optional manual check:** right after the test above, try logging in from your phone on mobile data. It should **not** be 429.
 
-## 5. Open decision: demo logins
-- **(a) Private (architect's recommendation):** seed the live DB, but don't publish the password. The README shows the Swagger docs and the walkthrough output.
-- **(b) Public:** publish the demo logins in the README. Then the password must be **a new, throwaway value** (not your `.env` one), and anyone can create and change demo data, limited by throttling (60 writes/min per user).
+## 5. Decision: demo logins are PUBLIC (Humayun chose option b, 2026-10-27)
+
+The architect recommended keeping them private; Humayun chose to publish them.
+
+- The live `DEMO_PASSWORD` is a **new throwaway value, used only for the public demo**. It's not the local `.env` password and not a secret:
+
+  ```
+  demo-YVD2LQlb020I
+  ```
+
+  In step B4, paste exactly this into Render's `DEMO_PASSWORD` field (ignore the clipboard command, which is for the private option).
+- It will be listed in the README with the demo emails (`manager@fixflow.example`, `plumber@…`, `alice@…`, etc.).
+- **What visitors can do:** log in as any demo user and create or change demo data within the role rules. They can't reach the admin (demo users aren't staff) or change passwords (no such endpoint). Writes are throttled to 60/min per user and logins to 10/min per IP.
+- **Reset:** each deploy re-runs `seed_demo`, which resets the demo passwords and re-creates any missing demo rows. It doesn't delete data visitors added. To wipe the demo, reset the Neon branch (ask first; it drops data).
