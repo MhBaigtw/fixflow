@@ -1,9 +1,27 @@
 from .base import *  # noqa: F403
-from .base import env
+from .base import DATABASES, env
 
 # No default: a missing SECRET_KEY raises ImproperlyConfigured at startup.
 SECRET_KEY = env("SECRET_KEY")
 DEBUG = False
+
+# Hosts: ALLOWED_HOSTS from env, plus the hostname Render assigns (set automatically
+# on Render), so the service works before a custom domain exists.
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+_render_host = env("RENDER_EXTERNAL_HOSTNAME", default="")
+if _render_host:
+    ALLOWED_HOSTS.append(_render_host)
+    CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
+
+# Database: TLS required by default (Neon requires it; set DB_SSLMODE=disable only
+# for the local docker-compose Postgres). Connections are reused for DB_CONN_MAX_AGE
+# seconds; health checks drop connections the server closed while idle (Neon
+# suspends its compute after a few idle minutes).
+DATABASES["default"].setdefault("OPTIONS", {})
+DATABASES["default"]["OPTIONS"].setdefault("sslmode", env("DB_SSLMODE", default="require"))
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 # TLS is terminated by the platform proxy.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

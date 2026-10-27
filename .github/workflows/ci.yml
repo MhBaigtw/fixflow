@@ -61,7 +61,45 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fixflow
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: fixflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t fixflow:ci .
+
+      - name: Smoke-test the image (prod settings, gunicorn, real Postgres)
+        run: |
+          SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          ENV="-e SECRET_KEY=$SECRET_KEY -e DB_SSLMODE=disable -e ALLOWED_HOSTS=localhost
+               -e DATABASE_URL=postgres://fixflow:ci-only-password@localhost:5432/fixflow"
+          docker run --rm --network host $ENV fixflow:ci \
+            sh -c "python manage.py migrate --noinput && python manage.py createcachetable"
+          docker run -d --name web --network host $ENV fixflow:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8000/api/health/ && break
+            sleep 1
+          done
+          echo
+          # Health is exempt from the SSL redirect (platform health checks use plain HTTP).
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/health/)" = 200
+          # Everything else redirects to HTTPS unless the proxy says the request was HTTPS.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/docs/)" = 301
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' \
+            http://localhost:8000/api/docs/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' \
+            http://localhost:8000/api/requests/)" = 401
+          docker logs web 2>&1 | tail -n 20
+          echo "smoke test passed"

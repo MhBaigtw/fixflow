@@ -1,0 +1,86 @@
+# Deploying FixFlow: Render (web) + Neon (Postgres)
+
+Checked against the providers' docs on **2026-10-27**. Free tiers change, so re-check
+these pages before relying on any number.
+
+## 1. Free-tier terms that matter here
+
+### Render, free web service ([render.com/docs/free](https://render.com/docs/free))
+- **Spin-down:** spins down after **15 minutes without inbound traffic**. The next request wakes it, and spin-up takes **about one minute** (browsers see a loading page).
+- **Hours:** **750 free instance hours per workspace per calendar month**. A spun-down service uses none. If they run out, free services are suspended until next month.
+- **Bandwidth and build minutes:** count against monthly included amounts. Without a payment method, going over suspends free services (bandwidth) or disables builds (build minutes).
+- **Other limits:** no persistent disk (local file changes are lost on spin-down), **no shell access**, one instance only, may be restarted at any time, outbound SMTP ports blocked.
+- **Render's own free Postgres expires after 30 days.** That's why the database is on Neon.
+- **Pre-deploy command:** documented as available for **paid** web services, private services and workers ([render.com/docs/deploys](https://render.com/docs/deploys)). The free page doesn't list it, so **we don't rely on it** (see section 2).
+- **Health checks:** `healthCheckPath` in the Blueprint. `2xx`/`3xx` within 5 s counts as healthy, and a new deploy only receives traffic once it passes ([render.com/docs/health-checks](https://render.com/docs/health-checks)). The health-check page doesn't say whether free instances get it; it's harmless if ignored.
+- **Docker:** the Blueprint spec allows `runtime: docker`, but no page I found states whether free instances support Docker deploys. **We use the native `python` runtime**, which works for certain and builds faster. The Dockerfile stays for local/CI use (CI builds it and smoke-tests it).
+- **Python version:** Render's current default is **3.14.x** ([render.com/docs/python-version](https://render.com/docs/python-version)). We pin **3.13** with a `.python-version` file (a partial version is allowed there) to match CI and the Dockerfile.
+- **Blueprint:** `render.yaml` with `plan: free` ([render.com/docs/blueprint-spec](https://render.com/docs/blueprint-spec)).
+  - `generateValue: true` creates a random secret, which we use for `SECRET_KEY`.
+  - `sync: false` prompts for a value once, at creation.
+- **Client IP:** Render's proxy passes the client address in `X-Forwarded-For`. Its official docs don't state how many hops append to it. We start with `NUM_PROXIES=1` and **verify it on the live service** (section 4).
+
+### Neon, Free plan ([neon.com/docs/introduction/plans](https://neon.com/docs/introduction/plans))
+- **Storage:** **1 GB per project** (20 GB across all projects; up to 100 projects). Inserts, updates and deletes fail when it's full; data is never deleted. The 10k benchmark dataset isn't deployed; only `seed_demo`'s handful of rows.
+- **Compute:** **100 CU-hours per project per month** (about 400 h at 0.25 CU). It's suspended until next month if exceeded.
+- **Scale to zero:** after **5 minutes idle**, which can't be disabled on Free. The first query after that pays a resume delay (not quantified in the docs; measured in Part F).
+- **Network transfer:** 5 GB per project per month.
+- **Connections** ([neon.com/docs/connect/connection-pooling](https://neon.com/docs/connect/connection-pooling)):
+  - **Pooled** (`-pooler` in the hostname): PgBouncer in **transaction mode**. Session features (SET, LISTEN, SQL-level PREPARE, session advisory locks) don't work.
+  - **Direct:** limited by `max_connections` (**104 at 0.25 CU**). Neon recommends direct for migrations.
+  - Connection strings include **`sslmode=require`**.
+
+## 2. How the app is configured for that
+
+| Concern | Decision |
+|---|---|
+| Migrations without pre-deploy | `bin/render-build.sh` runs `migrate`, `createcachetable` and (if `DEMO_PASSWORD` is set) `seed_demo` in the **build** step. A failed build never goes live, so the old version keeps serving. Fallback if the build can't reach the DB: move those lines to the start command (each wake-up then pays roughly a 1–2 s no-op migrate). |
+| Pooled vs direct | **Direct** connection string. With 2 gunicorn workers and persistent connections we use ~2 of 104 connections, migrations need a direct connection anyway, and transaction pooling buys nothing at this size. |
+| TLS to the DB | `prod.py` sets `sslmode=require` unless the URL already sets an sslmode (`DB_SSLMODE` overrides; only docker-compose sets `disable`). |
+| Connection reuse | `CONN_MAX_AGE=60` (`DB_CONN_MAX_AGE`) avoids a TLS handshake per request. `CONN_HEALTH_CHECKS=True` makes Django test a reused connection first, so connections Neon dropped while scaled to zero are replaced instead of failing a request. |
+| Hosts / CSRF | `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` from env, **plus** Render's `RENDER_EXTERNAL_HOSTNAME` (set automatically) and `https://` + that host. No values to type for the default `onrender.com` URL. |
+| HTTPS | Render terminates TLS. `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`, and `SECURE_SSL_REDIRECT` is on with `/api/health/` exempt. CI smoke-tests this: health 200 over plain HTTP, docs 301 → 200 with `X-Forwarded-Proto: https`. |
+| Health check | `/api/health/` (checks the DB; 503 if it's down). |
+| Secrets | `SECRET_KEY` generated by Render. `DATABASE_URL` and `DEMO_PASSWORD` are entered by Humayun in Render (`sync: false`). Nothing secret is in the repo. |
+| Throttle counters | `DatabaseCache` table, created at build. `NUM_PROXIES` from env (see section 4). |
+| Deploy trigger | `autoDeployTrigger: checksPass`: Render deploys a commit only after GitHub CI passes on it. |
+| Workers | 2 gunicorn workers (free instance: 0.1 CPU, 512 MB). |
+
+## 3. Steps for Humayun (accounts and secrets are yours; I never see them)
+
+### A. Neon (database)
+1. Go to <https://neon.com> → **Sign up** (GitHub or email). Choose the **Free** plan. Don't enter payment details; if asked, stop and tell me.
+2. **Create project.**
+   - Project name: `fixflow`.
+   - Postgres version: **16** (it's what CI tests against; if only 17 is offered, choose 17 and tell me).
+   - Region: **AWS US West 2 (Oregon)**, the same area as the Render service.
+3. On the project dashboard, click **Connect**.
+   - Branch `main`, database `neondb`, role `neondb_owner`.
+   - Make sure **Connection pooling is OFF**, so the host has **no** `-pooler`.
+   - Copy the connection string. It looks like `postgresql://neondb_owner:…@ep-….us-west-2.aws.neon.tech/neondb?sslmode=require…`.
+   - **Don't paste it into chat**; it goes only into Render in step B4.
+
+### B. Render (web service)
+1. Go to <https://render.com> → **Get Started** → sign up **with GitHub** as `MhBaigtw`. If it asks for a credit card for the free web service, stop and tell me.
+2. Allow Render to access the `MhBaigtw/fixflow` repository (only that repo is fine).
+3. Dashboard → **New +** → **Blueprint** → pick `MhBaigtw/fixflow`, branch `main`. Render reads `render.yaml` and shows one service, `fixflow` (plan: Free).
+4. It asks for the `sync: false` values:
+   - **`DATABASE_URL`:** paste the Neon **direct** string from A3.
+   - **`DEMO_PASSWORD`:** depends on the demo-login decision (section 5). To use the same password as your local `.env`, so I can run the walkthrough without ever seeing it, copy it to your clipboard **without printing it**, run from the project folder in PowerShell:
+     ```powershell
+     (Select-String -Path .env -Pattern '^DEMO_PASSWORD=').Line.Split('=', 2)[1] | Set-Clipboard
+     ```
+     Then paste into Render. Leave the field empty to skip demo data.
+   - Leave **`ALLOWED_HOSTS`** and **`CSRF_TRUSTED_ORIGINS`** empty. The `onrender.com` host is added automatically; they're only for a custom domain later.
+   - **`SECRET_KEY`** is generated by Render, so there's nothing to do. (If you ever need one yourself, generate it straight to the clipboard: `.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(50))" | Set-Clipboard`.)
+5. Click **Apply**. The first build takes a few minutes. When it shows **Live**, copy the service URL (e.g. `https://fixflow-xxxx.onrender.com`) and send me **only the URL**.
+
+## 4. What I verify after deploy (Part F)
+- `GET /api/health/` → 200 and `GET /api/docs/` → 200 on the live URL. Cold start measured after a >15 min idle period.
+- `scripts/walkthrough.py <live URL>` (reads `DEMO_PASSWORD` from my local `.env`, so it only works if you used the same value).
+- **`NUM_PROXIES` check:** send 11 failed logins, each with a different forged `X-Forwarded-For`. The 11th must be 429. If it isn't, the forged value is being trusted and `NUM_PROXIES` must be lowered. (If it's too *low*, every client shares one bucket. That can't be seen from a single machine: optional check below.)
+- **Optional manual check:** right after the test above, try logging in from your phone on mobile data. It should **not** be 429.
+
+## 5. Open decision: demo logins
+- **(a) Private (architect's recommendation):** seed the live DB, but don't publish the password. The README shows the Swagger docs and the walkthrough output.
+- **(b) Public:** publish the demo logins in the README. Then the password must be **a new, throwaway value** (not your `.env` one), and anyone can create and change demo data, limited by throttling (60 writes/min per user).

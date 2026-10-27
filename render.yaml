@@ -1,0 +1,29 @@
+# Render Blueprint for FixFlow (web service only; the database is on Neon).
+# Setup steps and the reasoning behind each value: docs/deploy.md
+services:
+  - type: web
+    name: fixflow
+    runtime: python
+    plan: free
+    region: oregon            # pair with a Neon project in AWS us-west-2 (Oregon)
+    buildCommand: bash bin/render-build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --access-logfile -
+    healthCheckPath: /api/health/
+    autoDeployTrigger: checksPass   # deploy only after GitHub CI passes
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        generateValue: true       # Render generates it; nobody has to copy a secret
+      - key: DATABASE_URL         # Neon DIRECT connection string (not -pooler), sslmode=require
+        sync: false
+      - key: DEMO_PASSWORD        # optional; set to seed demo users at build time
+        sync: false
+      - key: ALLOWED_HOSTS        # extra hosts only; the onrender.com host is added automatically
+        value: ""
+      - key: CSRF_TRUSTED_ORIGINS # extra origins only; https://<onrender host> is added automatically
+        value: ""
+      - key: NUM_PROXIES          # proxies in front of the app; verified after first deploy
+        value: "1"
+      - key: DB_CONN_MAX_AGE
+        value: "60"

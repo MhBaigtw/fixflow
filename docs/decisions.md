@@ -161,3 +161,18 @@ Each entry gives the choice, the alternatives considered and the reason.
   - **Population:** requests currently resolved or closed with `resolved_at` set. Cancelled and reopened-but-not-re-resolved requests are excluded.
   - **Out-of-scope `property`:** returns zeros rather than 404, the same as the list filters (D11).
 - **Cost on the 10k data:** 4 queries (auth, open counts, medians, overdue count), ~42 ms average in-process.
+
+## D26. Deploy shape: Render (native Python, free) + Neon (direct connection)
+- **Choice:**
+  - Native `runtime: python` rather than Docker: free-tier Docker support isn't documented. The Dockerfile is still built and smoke-tested in CI.
+  - Migrations, `createcachetable` and an optional `seed_demo` run in the **build** step (`bin/render-build.sh`), because pre-deploy commands are documented for paid services only. Fallback: move them to the start command.
+  - Neon **direct** connection with `sslmode=require` (forced by `prod.py` unless the URL already sets one).
+  - `CONN_MAX_AGE=60` with `CONN_HEALTH_CHECKS=True`, so reused connections survive Neon scaling to zero.
+  - `RENDER_EXTERNAL_HOSTNAME` is added to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` automatically.
+  - `SECRET_KEY` comes from Render `generateValue`.
+  - `autoDeployTrigger: checksPass`.
+  - Python pinned with `.python-version` (3.13), because Render's default is now 3.14.
+- **Why not pooled:** at 2 workers the connection count is tiny. Transaction pooling breaks session features and Neon advises direct connections for migrations.
+- **Seeding without a shell:** free instances have no shell, so the build step seeds when `DEMO_PASSWORD` is set. `seed_demo` is idempotent, so redeploys are safe.
+- **Risk:** `NUM_PROXIES=1` is a starting value; Render's docs don't state the hop count. It's verified on the live service with forged `X-Forwarded-For` headers (docs/deploy.md section 4).
+- **CI:** the Docker job now runs the image with prod settings, gunicorn and Postgres. It asserts health is 200 over HTTP (redirect-exempt), docs are 301 over HTTP and 200 with `X-Forwarded-Proto: https`, and `/api/requests/` is 401.

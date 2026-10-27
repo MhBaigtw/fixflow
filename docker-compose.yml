@@ -28,8 +28,9 @@ services:
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       ALLOWED_HOSTS: localhost,127.0.0.1
       SECURE_SSL_REDIRECT: "False"
+      DB_SSLMODE: disable  # the compose Postgres has no TLS; real deploys keep "require"
     command: >
-      sh -c "python manage.py migrate --noinput &&
+      sh -c "python manage.py migrate --noinput && python manage.py createcachetable &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --access-logfile -"
     ports:
       - "8000:8000"

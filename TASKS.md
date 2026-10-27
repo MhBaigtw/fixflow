@@ -69,12 +69,12 @@
 - [x] Scoped throttling (login/refresh per IP, writes per user), env-configurable
 - [x] DatabaseCache for shared throttle counters; tests isolated
 - [x] GET /api/stats/ (open by status, overdue, median hours to resolve per category)
-- [ ] Full verification, push (ask first), CI green
+- [x] Full verification, push (ask first), CI green
 
 ### Part E: Deploy prep (Phase 4)
-- [ ] docs/deploy.md: current Render + Neon free-tier terms with links
-- [ ] render.yaml / settings for deploy (SSL DB, CSRF origins, CONN_MAX_AGE, cache table)
-- [ ] Click-by-click steps for Humayun
+- [x] docs/deploy.md: current Render + Neon free-tier terms with links
+- [x] render.yaml / settings for deploy (SSL DB, CSRF origins, CONN_MAX_AGE, cache table)
+- [x] Click-by-click steps for Humayun
 - [ ] Ask Humayun: demo logins private or public
 - [ ] STOP for Humayun
 
