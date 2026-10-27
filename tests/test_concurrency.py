@@ -63,13 +63,17 @@ def slow_event_write(monkeypatch):
     monkeypatch.setattr(transitions, "record_event", slow)
 
 
-def assert_one_winner(responses, req, winning_statuses):
-    codes = sorted(r.status_code for r in responses)
-    assert codes == [200, 409], [r.content for r in responses]
-    loser = next(r for r in responses if r.status_code == 409)
-    assert_error(loser, 409, "invalid_transition")
+def assert_one_winner(responses, req, loser_by_outcome):
+    """Exactly one 200 and one event. `loser_by_outcome` maps each possible final
+    status to the (status_code, error_code) the losing request must get: the loser
+    is judged against the state *after* the winner committed."""
+    winners = [r for r in responses if r.status_code == 200]
+    losers = [r for r in responses if r.status_code != 200]
+    assert len(winners) == 1 and len(losers) == 1, [r.content for r in responses]
     req.refresh_from_db()
-    assert req.status in winning_statuses
+    assert req.status in loser_by_outcome
+    status_code, error_code = loser_by_outcome[req.status]
+    assert_error(losers[0], status_code, error_code)
     events = list(RequestEvent.objects.filter(request=req))
     assert len(events) == 1
     assert events[0].to_status == req.status
@@ -77,7 +81,26 @@ def assert_one_winner(responses, req, winning_statuses):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("hold_lock", [False, True])
+def test_close_vs_reopen_race(wf, client_for, request, hold_lock):
+    """Whichever wins, the other move is illegal from the new status: always 409."""
+    if hold_lock:
+        request.getfixturevalue("slow_event_write")
+    req = wf.make(S.RESOLVED)
+    responses = race(
+        [
+            transition_call(client_for(wf["creator"]), req, "close"),
+            transition_call(client_for(wf["roommate"]), req, "reopen"),
+        ]
+    )
+    conflict = (409, "invalid_transition")
+    assert_one_winner(responses, req, {S.CLOSED: conflict, S.TRIAGED: conflict})
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("hold_lock", [False, True])
 def test_triage_vs_cancel_race(wf, client_for, request, hold_lock):
+    """If cancel wins, triage is illegal from cancelled (409). If triage wins, the
+    tenant's cancel is legal from triaged but manager-only, so it is a 403."""
     if hold_lock:
         request.getfixturevalue("slow_event_write")
     req = wf.make(S.SUBMITTED)
@@ -87,7 +110,42 @@ def test_triage_vs_cancel_race(wf, client_for, request, hold_lock):
             transition_call(client_for(wf["creator"]), req, "cancel"),
         ]
     )
-    assert_one_winner(responses, req, {S.TRIAGED, S.CANCELLED})
+    assert_one_winner(
+        responses,
+        req,
+        {
+            S.CANCELLED: (409, "invalid_transition"),
+            S.TRIAGED: (403, "permission_denied"),
+        },
+    )
+
+
+def delayed(call, seconds):
+    def run():
+        time.sleep(seconds)
+        return call()
+
+    return run
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("first", ["manager", "creator"])
+def test_triage_vs_cancel_each_ordering(wf, client_for, slow_event_write, first):
+    """Force each winner in turn: the first caller takes the lock and holds it for
+    0.5s; the second starts 0.1s later, blocks, then sees the committed status."""
+    req = wf.make(S.SUBMITTED)
+    triage = transition_call(client_for(wf["manager"]), req, "triage")
+    cancel = transition_call(client_for(wf["creator"]), req, "cancel")
+    if first == "manager":
+        calls, expected_status, loser = [triage, delayed(cancel, 0.1)], S.TRIAGED, 403
+    else:
+        calls, expected_status, loser = [cancel, delayed(triage, 0.1)], S.CANCELLED, 409
+    responses = race(calls)
+    assert responses[0].status_code == 200
+    assert responses[1].status_code == loser
+    req.refresh_from_db()
+    assert req.status == expected_status
+    assert RequestEvent.objects.filter(request=req).count() == 1
 
 
 @pytest.mark.django_db(transaction=True)
@@ -100,13 +158,13 @@ def test_double_submit_of_same_transition(wf, client_for, slow_event_write):
             transition_call(contractor, req, "resolve"),
         ]
     )
-    assert_one_winner(responses, req, {S.RESOLVED})
+    assert_one_winner(responses, req, {S.RESOLVED: (409, "invalid_transition")})
 
 
 @pytest.mark.django_db(transaction=True)
 def test_second_transaction_waits_for_lock(wf, client_for, slow_event_write):
     """The loser must block on the row lock (not read a stale status and fail fast)."""
-    req = wf.make(S.SUBMITTED)
+    req = wf.make(S.RESOLVED)
 
     def timed(call):
         def run():
@@ -118,8 +176,8 @@ def test_second_transaction_waits_for_lock(wf, client_for, slow_event_write):
 
     results = race(
         [
-            timed(transition_call(client_for(wf["manager"]), req, "triage")),
-            timed(transition_call(client_for(wf["creator"]), req, "cancel")),
+            timed(transition_call(client_for(wf["creator"]), req, "close")),
+            timed(transition_call(client_for(wf["roommate"]), req, "reopen")),
         ]
     )
     assert sorted(r.status_code for r, _ in results) == [200, 409]
