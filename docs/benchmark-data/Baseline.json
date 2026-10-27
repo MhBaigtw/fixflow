@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "label": "Baseline",
+    "date": "2026-10-27 19:37 UTC",
+    "commit": "06a72cf",
+    "machine": "AMD Ryzen 5 5500U with Radeon Graphics (6 cores / 12 threads), 7.3 GB RAM, Microsoft Windows 11 Home 10.0.26300",
+    "software": "Python 3.13.3, Django 5.2.18, DRF 3.18.3, PostgreSQL 16.14 (local, same machine)",
+    "dataset": "10,008 requests, 46,151 events, 17,425 comments, 718 users",
+    "subjects": "manager=manager0@bulk1.example, tenant=tenant20@bulk1.example, contractor=contractor13@bulk1.example",
+    "command": ".venv\\Scripts\\python.exe scripts/benchmark.py --label Baseline",
+    "warmup": 20,
+    "runs": 200
+  },
+  "results": [
+    {
+      "endpoint": "GET /api/requests/ (page 1, 20 rows of 5415)",
+      "role": "manager",
+      "queries": 23,
+      "p50": 67.83355000516167,
+      "p95": 77.31981499091489,
+      "max": 119.73360000411049
+    },
+    {
+      "endpoint": "GET /api/requests/{id}/",
+      "role": "manager",
+      "queries": 3,
+      "p50": 11.07324999611592,
+      "p95": 13.526470002398128,
+      "max": 18.65410000027623
+    },
+    {
+      "endpoint": "GET /api/requests/ (page 1, 20 rows of 259)",
+      "role": "tenant",
+      "queries": 23,
+      "p50": 56.39245000202209,
+      "p95": 65.72713999339612,
+      "max": 110.26289999426808
+    },
+    {
+      "endpoint": "GET /api/requests/{id}/",
+      "role": "tenant",
+      "queries": 3,
+      "p50": 12.88360000035027,
+      "p95": 22.586465001222678,
+      "max": 60.366700010490604
+    },
+    {
+      "endpoint": "GET /api/requests/ (page 1, 20 rows of 3761)",
+      "role": "contractor",
+      "queries": 23,
+      "p50": 67.47784999606665,
+      "p95": 116.56228999927407,
+      "max": 169.38609999488108
+    },
+    {
+      "endpoint": "GET /api/requests/{id}/",
+      "role": "contractor",
+      "queries": 3,
+      "p50": 11.50874999439111,
+      "p95": 15.251709993026452,
+      "max": 28.127500001573935
+    },
+    {
+      "endpoint": "GET /api/requests/{id}/events/ (10 events)",
+      "role": "manager",
+      "queries": 4,
+      "p50": 16.13635000103386,
+      "p95": 26.475990004837513,
+      "max": 38.76359999412671
+    },
+    {
+      "endpoint": "GET /api/requests/{id}/comments/ (5 comments)",
+      "role": "manager",
+      "queries": 4,
+      "p50": 15.187749995675404,
+      "p95": 22.695784995448776,
+      "max": 28.21510001376737
+    }
+  ]
+}
