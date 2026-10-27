@@ -88,6 +88,27 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
+    # Scoped throttles (see ScopedRateThrottle on the views). Login/refresh are keyed by
+    # client IP, writes by user id.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": env("THROTTLE_LOGIN_RATE", default="10/min"),
+        "token_refresh": env("THROTTLE_REFRESH_RATE", default="10/min"),
+        "writes": env("THROTTLE_WRITE_RATE", default="60/min"),
+    },
+    # How many proxies sit in front of the app; DRF then takes the client IP from
+    # X-Forwarded-For at that depth. 0 = use REMOTE_ADDR (no proxy, e.g. local dev).
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
+}
+
+# Throttle counters must be shared by every gunicorn worker (and every instance),
+# otherwise each process keeps its own count and the effective limit multiplies.
+# The database cache is shared and needs no extra service. Create its table with
+# `manage.py createcachetable` (run on deploy).
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+    }
 }
 
 SIMPLE_JWT = {

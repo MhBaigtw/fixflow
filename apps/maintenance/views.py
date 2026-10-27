@@ -2,8 +2,9 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from apps.accounts.permissions import IsTenant
 
@@ -31,6 +32,14 @@ class MaintenanceRequestViewSet(
 
     serializer_class = MaintenanceRequestSerializer
     filterset_class = MaintenanceRequestFilter
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "writes"
+
+    def get_throttles(self):
+        # Only writes (create, PATCH, transition, comment POST) count against the limit.
+        if self.request.method in SAFE_METHODS:
+            return []
+        return super().get_throttles()
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):  # schema generation

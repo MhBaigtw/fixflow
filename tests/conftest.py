@@ -3,6 +3,16 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Throttle counters live in the cache: start every test from zero."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def anon():
     return APIClient()

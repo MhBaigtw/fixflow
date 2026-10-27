@@ -3,6 +3,8 @@
 {"error": {"code": "<machine_code>", "message": "<human message>", "details": {...}}}
 """
 
+import math
+
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.http import Http404
 from rest_framework import exceptions, status
@@ -57,5 +59,8 @@ def exception_handler(exc, context):
         message = str(detail)
         code = getattr(detail, "code", None) or exc.default_code
         details = getattr(exc, "details", {})
+        if isinstance(exc, exceptions.Throttled) and exc.wait is not None:
+            # DRF also sets the Retry-After header on this response.
+            details = {"retry_after_seconds": math.ceil(exc.wait)}
     response.data = error_body(code, message, details)
     return response
