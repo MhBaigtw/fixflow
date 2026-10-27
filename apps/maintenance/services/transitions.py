@@ -44,13 +44,25 @@ def is_current_tenant(user, req):
     )
 
 
+# The manager check is free (unit and property are loaded with the locked row), so it
+# runs first; the tenancy lookup only runs for tenants.
 def is_current_tenant_or_manager(user, req):
-    return is_current_tenant(user, req) or is_property_manager(user, req)
+    return is_property_manager(user, req) or is_current_tenant(user, req)
 
 
 def is_creator_or_manager(user, req):
-    return (req.created_by_id == user.id and is_current_tenant(user, req)) or is_property_manager(
-        user, req
+    return is_property_manager(user, req) or (
+        req.created_by_id == user.id and is_current_tenant(user, req)
+    )
+
+
+def lock_request(request_id):
+    """Row-lock the request (only its own row: of=self) with unit and property joined,
+    so permission checks need no further queries."""
+    return (
+        MaintenanceRequest.objects.select_for_update(of=("self",))
+        .select_related("unit__property")
+        .get(pk=request_id)
     )
 
 
@@ -93,7 +105,7 @@ def apply_transition(*, request_id, actor, action, note="", contractor_id=None, 
     with transaction.atomic():
         # Lock first, then read the status: a concurrent transition that committed
         # while we waited is visible here, so two racing moves can't both succeed.
-        req = MaintenanceRequest.objects.select_for_update().get(pk=request_id)
+        req = lock_request(request_id)
         transition = find_transition(action, req.status)
         if transition is None:
             raise InvalidTransition(

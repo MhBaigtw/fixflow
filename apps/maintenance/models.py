@@ -61,6 +61,19 @@ class MaintenanceRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+        # Each index was kept only after EXPLAIN (ANALYZE) on the 10k dataset showed it
+        # turned a full scan + sort into an ordered index scan for a real list query.
+        # Evidence: docs/benchmarks.md, "Index decisions".
+        indexes = [
+            # Default ordering for manager lists (and the overdue filter's page).
+            models.Index(fields=["-created_at", "-id"], name="req_created_idx"),
+            # Contractor lists: filter by assignee, already in default order.
+            models.Index(
+                fields=["assigned_to", "-created_at", "-id"], name="req_assignee_created_idx"
+            ),
+            # ?ordering=sla_due_at ("what's due soonest").
+            models.Index(fields=["sla_due_at"], name="req_sla_due_idx"),
+        ]
 
     def __str__(self):
         return f"#{self.pk} {self.title} [{self.status}]"

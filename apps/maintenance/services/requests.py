@@ -8,7 +8,7 @@ from apps.properties.selectors import active_tenancies
 
 from .audit import record_change, record_event
 from .priority import compute_sla_due_at, set_priority
-from .transitions import is_property_manager
+from .transitions import is_property_manager, lock_request
 
 S = MaintenanceRequest.Status
 EDITABLE_FIELDS = ("title", "description", "category", "priority")
@@ -51,7 +51,7 @@ def update_request(*, request_id, user, **fields):
     """
     with transaction.atomic():
         # Locked so an edit can't interleave with a concurrent transition.
-        req = MaintenanceRequest.objects.select_for_update().get(pk=request_id)
+        req = lock_request(request_id)
         changes = {}
         if req.created_by_id == user.id:
             if req.status != S.SUBMITTED:

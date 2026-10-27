@@ -1,7 +1,8 @@
 """Read-side scoping for maintenance requests.
 
-Phase 2 keeps these querysets deliberately plain (no select_related /
-prefetch_related): Phase 3 benchmarks this baseline before optimizing.
+Phase 3: requests come with their unit joined (select_related) because the
+serializer's `property` field reads unit.property_id. Before this, every list row
+cost one extra query (see docs/benchmarks.md, Baseline vs Optimized).
 """
 
 from django.db.models import Case, IntegerField, Q, Value, When
@@ -17,7 +18,7 @@ P = MaintenanceRequest.Priority
 def requests_visible_to(user):
     """tenant: requests on units they actively rent (roommates share them);
     manager: requests on properties they manage; contractor: requests assigned to them."""
-    qs = MaintenanceRequest.objects.all()
+    qs = MaintenanceRequest.objects.select_related("unit")
     if user.is_manager:
         return qs.filter(unit__property__manager=user)
     if user.is_contractor:
