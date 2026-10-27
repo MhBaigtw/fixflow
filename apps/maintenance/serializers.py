@@ -101,6 +101,50 @@ class RequestEventSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class StatsQuerySerializer(serializers.Serializer):
+    property = serializers.IntegerField(
+        required=False, help_text="Limit to one of your properties (others give zeros)."
+    )
+    created_after = serializers.DateTimeField(
+        required=False, help_text="Only requests created at or after this time (ISO 8601)."
+    )
+    created_before = serializers.DateTimeField(
+        required=False, help_text="Only requests created at or before this time (ISO 8601)."
+    )
+
+
+class OpenByStatusSerializer(serializers.Serializer):
+    submitted = serializers.IntegerField()
+    triaged = serializers.IntegerField()
+    assigned = serializers.IntegerField()
+    in_progress = serializers.IntegerField()
+
+
+class MedianHoursSerializer(serializers.Serializer):
+    plumbing = serializers.FloatField(allow_null=True)
+    electrical = serializers.FloatField(allow_null=True)
+    heating = serializers.FloatField(allow_null=True)
+    appliance = serializers.FloatField(allow_null=True)
+    pest = serializers.FloatField(allow_null=True)
+    structural = serializers.FloatField(allow_null=True)
+    other = serializers.FloatField(allow_null=True)
+
+
+class StatsSerializer(serializers.Serializer):
+    open_by_status = OpenByStatusSerializer(help_text="Count of requests in each open status.")
+    overdue = serializers.IntegerField(
+        help_text="Requests not resolved, closed or cancelled whose sla_due_at has passed."
+    )
+    median_hours_to_resolve = MedianHoursSerializer(
+        help_text=(
+            "Per category: median of (resolved_at - created_at) in hours, over requests "
+            "currently resolved or closed (Postgres percentile_cont(0.5), i.e. the mean of "
+            "the two middle values for an even count). A reopened-then-re-resolved request "
+            "counts from creation to its final resolution. null = no resolved requests."
+        )
+    )
+
+
 class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment

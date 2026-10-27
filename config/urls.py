@@ -5,7 +5,7 @@ from rest_framework.routers import SimpleRouter
 
 from apps.accounts.views import EmailTokenObtainPairView, MeView, ThrottledTokenRefreshView
 from apps.core.views import HealthView
-from apps.maintenance.views import MaintenanceRequestViewSet
+from apps.maintenance.views import MaintenanceRequestViewSet, StatsView
 from apps.properties.views import (
     EndTenancyView,
     PropertyViewSet,
@@ -21,6 +21,7 @@ api_patterns = [
     path("auth/token/", EmailTokenObtainPairView.as_view(), name="token_obtain"),
     path("auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="token_refresh"),
     path("me/", MeView.as_view(), name="me"),
+    path("stats/", StatsView.as_view(), name="stats"),
     path("health/", HealthView.as_view(), name="health"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),

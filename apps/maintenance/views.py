@@ -5,8 +5,9 @@ from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsTenant
+from apps.accounts.permissions import IsManager, IsTenant
 
 from . import selectors
 from .filters import MaintenanceRequestFilter
@@ -17,11 +18,35 @@ from .serializers import (
     MaintenanceRequestSerializer,
     MaintenanceRequestUpdateSerializer,
     RequestEventSerializer,
+    StatsQuerySerializer,
+    StatsSerializer,
     TransitionSerializer,
 )
 from .services.comments import add_comment
 from .services.requests import create_request, update_request
 from .services.transitions import apply_transition
+
+
+class StatsView(APIView):
+    """Manager dashboard numbers, scoped to the caller's properties.
+
+    Metric definitions are on manager_stats() and in the OpenAPI schema.
+    """
+
+    permission_classes = [IsManager]
+
+    @extend_schema(parameters=[StatsQuerySerializer], responses=StatsSerializer)
+    def get(self, request):
+        params = StatsQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        data = params.validated_data
+        stats = selectors.manager_stats(
+            request.user,
+            property_id=data.get("property"),
+            created_after=data.get("created_after"),
+            created_before=data.get("created_before"),
+        )
+        return Response(StatsSerializer(stats).data)
 
 
 class MaintenanceRequestViewSet(
