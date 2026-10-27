@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.accounts.views import MeView
 from apps.core.views import HealthView
+from apps.maintenance.views import MaintenanceRequestViewSet
 from apps.properties.views import (
     EndTenancyView,
     PropertyViewSet,
@@ -15,6 +16,7 @@ from apps.properties.views import (
 
 router = SimpleRouter()
 router.register("properties", PropertyViewSet, basename="property")
+router.register("requests", MaintenanceRequestViewSet, basename="request")
 
 api_patterns = [
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain"),

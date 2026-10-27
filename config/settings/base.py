@@ -103,6 +103,9 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "0.2.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_NAME_OVERRIDES": {
+        "RequestStatusEnum": "apps.maintenance.models.MaintenanceRequest.Status",
+    },
 }
 
 # Maintenance workflow

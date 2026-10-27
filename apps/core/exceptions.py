@@ -14,6 +14,10 @@ class Conflict(exceptions.APIException):
     default_detail = "The request conflicts with the current state of the resource."
     default_code = "conflict"
 
+    def __init__(self, detail=None, code=None, details=None):
+        super().__init__(detail, code)
+        self.details = details or {}
+
 
 class InvalidTransition(Conflict):
     default_detail = "This transition is not allowed from the current status."
@@ -52,6 +56,6 @@ def exception_handler(exc, context):
     else:
         message = str(detail)
         code = getattr(detail, "code", None) or exc.default_code
-        details = {}
+        details = getattr(exc, "details", {})
     response.data = error_body(code, message, details)
     return response
