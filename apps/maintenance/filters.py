@@ -10,7 +10,11 @@ class MaintenanceRequestFilter(filters.FilterSet):
     property = filters.NumberFilter(field_name="unit__property_id")
     unit = filters.NumberFilter(field_name="unit_id")
     assigned_to = filters.NumberFilter(field_name="assigned_to_id")
-    overdue = filters.BooleanFilter(method="filter_overdue")
+    # A choice filter (not BooleanFilter) so a typo like ?overdue=yes is a 400
+    # instead of being silently ignored.
+    overdue = filters.ChoiceFilter(
+        choices=[("true", "true"), ("false", "false")], method="filter_overdue"
+    )
     created_after = filters.IsoDateTimeFilter(field_name="created_at", lookup_expr="gte")
     created_before = filters.IsoDateTimeFilter(field_name="created_at", lookup_expr="lte")
     ordering = filters.OrderingFilter(
@@ -26,4 +30,6 @@ class MaintenanceRequestFilter(filters.FilterSet):
         fields = ["status", "priority", "category"]
 
     def filter_overdue(self, queryset, name, value):
-        return queryset.filter(overdue_q()) if value else queryset.exclude(overdue_q())
+        if value == "true":
+            return queryset.filter(overdue_q())
+        return queryset.exclude(overdue_q())

@@ -269,9 +269,7 @@ def test_full_lifecycle_audit_trail(wf, client_for):
 
     resp = tenant.get(f"/api/requests/{req.id}/events/")
     assert resp.status_code == 200
-    trail = [
-        (e["from_status"], e["to_status"], e["actor"]) for e in resp.json()["results"]
-    ]
+    trail = [(e["from_status"], e["to_status"], e["actor"]) for e in resp.json()["results"]]
     c, m, k = wf["creator"].id, wf["manager"].id, wf["contractor"].id
     assert trail == [
         (None, "submitted", c),
