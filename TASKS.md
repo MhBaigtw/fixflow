@@ -42,8 +42,8 @@
 ## Checkpoint 1
 - [x] Full verification run
 - [x] README, TASKS, HANDOFF updated
-- [ ] Repo created + pushed (waiting for Humayun's approval)
-- [ ] CI result confirmed
+- [x] Repo created + pushed (https://github.com/MhBaigtw/fixflow)
+- [x] CI result confirmed (green on 8ad1a3a after fixing an order-dependent race test)
 
 ## Phase 3: Measure and harden (not started)
 - [ ] seed_bulk (10,000 requests, realistic distributions)

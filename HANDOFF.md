@@ -2,11 +2,7 @@
 
 ## Status
 
-**Done locally; not yet pushed.** Phases 1 and 2 are built and every local check passes.
-Two items are still open:
-
-- Creating the GitHub repo and pushing it (waiting for Humayun's approval).
-- Confirming the CI run, which can only happen after the push.
+**Done.** Phases 1 and 2 are built and pushed to <https://github.com/MhBaigtw/fixflow>, and CI is green on both jobs (`test` and `docker`). The first CI run failed on one concurrency test; the cause and fix are under "CI run result" below. Phase 3 is not started.
 
 ## Versions installed
 
@@ -62,7 +58,7 @@ Two items are still open:
 | `apps/maintenance/selectors.py` | Request visibility per role, priority rank, the overdue condition |
 | `apps/maintenance/filters.py` | List filters and ordering |
 | `apps/maintenance/views.py` | Thin viewset; every lookup goes through the scoped queryset |
-| `tests/` | 297 tests: permission, transition and visibility matrices, concurrency, SLA, seed, admin |
+| `tests/` | 301 tests: permission, transition and visibility matrices, concurrency, SLA, seed, admin |
 | `scripts/walkthrough.py` | Stdlib-only HTTP walkthrough against any base URL |
 | `.github/workflows/ci.yml` | Lint, format, migrations, `check --deploy`, schema validation, pytest ≥85%, Docker build |
 
@@ -83,28 +79,34 @@ All 17 are written up in [docs/decisions.md](docs/decisions.md). The most import
 
 ### pytest (full suite, coverage gate 85%)
 
-```
-Name                            Stmts   Miss  Cover   Missing
--------------------------------------------------------------
-apps\maintenance\selectors.py      23      1    96%   27
--------------------------------------------------------------
-TOTAL                             842      1    99%
+Local run (Windows, after the concurrency-test fix):
 
-41 files skipped due to complete coverage.
+```
 Required test coverage of 85% reached. Total coverage: 99.88%
-297 passed in 35.28s
+301 passed in 57.04s
 ```
 
-The concurrency tests were run five extra times in a row: `4 passed` each time.
-
-With `select_for_update()` removed as a deliberate mutation, all 4 concurrency tests failed:
+CI run (Linux; coverage is slightly lower because there's no `.env` file, so the `read_env` line in `base.py` doesn't run):
 
 ```
+Required test coverage of 85% reached. Total coverage: 99.76%
+============================= 301 passed in 15.35s =============================
+```
+
+The concurrency tests passed five runs in a row: `8 passed` each time.
+
+With `select_for_update()` removed as a deliberate mutation, all 8 concurrency tests failed:
+
+```
+FAILED tests/test_concurrency.py::test_close_vs_reopen_race[False]
+FAILED tests/test_concurrency.py::test_close_vs_reopen_race[True]
 FAILED tests/test_concurrency.py::test_triage_vs_cancel_race[False]
 FAILED tests/test_concurrency.py::test_triage_vs_cancel_race[True]
+FAILED tests/test_concurrency.py::test_triage_vs_cancel_each_ordering[manager]
+FAILED tests/test_concurrency.py::test_triage_vs_cancel_each_ordering[creator]
 FAILED tests/test_concurrency.py::test_double_submit_of_same_transition
 FAILED tests/test_concurrency.py::test_second_transaction_waits_for_lock
-4 failed
+8 failed
 ```
 
 ### makemigrations --check --dry-run
@@ -203,20 +205,60 @@ Demo data ready (newly created: 7 users, 2 properties, 5 units, 4 tenancies, 7 r
 Demo data ready (newly created: 0 users, 0 properties, 0 units, 0 tenancies, 0 requests).
 ```
 
-### git log --oneline
+### git log --oneline (at the green CI run)
 
 ```
-(regenerated at push time; see the end of this file)
+8ad1a3a test(concurrency): judge the race loser against the winner's committed state
+c528175 docs: README, decision log, task list and checkpoint 1 handoff
+d9744b2 feat(scripts): HTTP walkthrough of the full request lifecycle
+9458cc8 feat(core): idempotent seed_demo command with requests in every state; admin smoke tests
+0f7d744 test(maintenance): concurrent conflicting transitions with real threads
+0f43952 feat(maintenance): strict overdue filter; test SLA targets, filters and ordering
+ad75540 test(maintenance): visibility matrix, internal comments, creation and edit rules
+7461bf2 feat(maintenance): workflow state machine with row-locked transitions and request API
+a5f4107 feat(maintenance): request, append-only audit event and comment models
+863aaf0 ci: GitHub Actions with Postgres 16, lint, deploy checks, coverage gate; add Docker setup
+f74235e feat(core): unified error shape, health check and OpenAPI docs
+2b2be77 feat(properties): properties, units and tenancies with manager-scoped permissions
+58ff3d3 feat(accounts): email-login custom user with roles, JWT auth and /me endpoint
+21df1c1 chore: scaffold project with env-driven settings package and planning docs
 ```
 
 ### CI run result
 
-Not run yet: the repo hasn't been pushed. See the end of this file.
+**First run: failed** (run 40566537813, commit `c528175`). The `docker` job passed. In the `test` job, lint, format, migrations, `check --deploy` and schema validation all passed, but 1 of 297 tests failed:
+
+```
+FAILED tests/test_concurrency.py::test_triage_vs_cancel_race[False]
+assert [200, 403] == [200, 409]
+```
+
+**Cause: a wrong test expectation, not a code bug.** On the Linux runner the manager's `triage` won the race; locally the tenant's `cancel` had always won. Once the request is `triaged`, the tenant's `cancel` is a legal move from that status but manager-only. So by the spec's rules (and D4), the correct answer is **403**, not 409. The lock behaved correctly: one success and one event.
+
+**Fix** (commit `8ad1a3a`), which changes only the tests:
+- The race tests now check the loser's response against whichever request actually won.
+- A new test forces each ordering deterministically, so both outcomes are always exercised.
+- A new close-vs-reopen race always produces a 409 for the loser.
+
+This is a test fix, not a weakened test. It still requires exactly one winner and exactly one event, and all 8 concurrency tests still fail without `select_for_update()`.
+
+**Second run: green.** Run 40567471482: <https://github.com/MhBaigtw/fixflow/actions/runs/40567471482>
+
+```
+test: success
+docker: success
+
+ruff check:            All checks passed!
+ruff format --check:   66 files already formatted
+makemigrations:        No changes detected
+check --deploy:        System check identified no issues (0 silenced).
+pytest:                301 passed in 15.35s; Total coverage: 99.76%
+```
 
 ## Known gaps, risks, surprises
 
-- **Docker was not run locally** (by instruction: Docker is unreliable on this machine). The CI `docker` job builds the image, but `docker compose up` itself hasn't been exercised anywhere.
-- **The CI workflow hasn't run yet.** It was checked locally step by step with the same commands; a Linux runner may still surface something.
+- **Docker was not run locally** (by instruction: Docker is unreliable on this machine). The CI `docker` job builds the image successfully, but `docker compose up` itself hasn't been exercised anywhere.
+- **Surprise 3:** a race test was order-dependent: Windows always produced one winner and Linux the other. See "CI run result". Lesson for Phase 3: force orderings deterministically rather than relying on scheduling.
 - **Login email is case-sensitive.** Emails are stored lowercase, but `Alice@fixflow.example` won't log in (D14).
 - **Phase 2 is intentionally N+1.** Every list row triggers extra queries, for example the `property` field. This is the baseline Phase 3 will measure (D2).
 - **No throttling yet**, including on login (Phase 3).
@@ -230,15 +272,16 @@ Not run yet: the repo hasn't been pushed. See the end of this file.
 
 ## Actions Humayun must take
 
-1. Approve creating the public repo `MhBaigtw/fixflow` and pushing `main`. `gh` is already authenticated as MhBaigtw, so I can run it myself:
-   ```powershell
-   gh repo create MhBaigtw/fixflow --public --source . --remote origin --push
-   ```
-2. Nothing else is needed for local use. `.env` already exists, with a random `fixflow` DB password, `SECRET_KEY` and `DEMO_PASSWORD`. To see the demo password locally:
-   ```powershell
-   Select-String DEMO_PASSWORD .env
-   ```
+Nothing is required. The repo is created and pushed, with your approval.
+
+`.env` already exists, with a random `fixflow` DB password, `SECRET_KEY` and `DEMO_PASSWORD`. To see the demo password locally:
+
+```powershell
+Select-String DEMO_PASSWORD .env
+```
 
 ## Repo URL and latest commit hash
 
-Pending push (see below).
+- Repo: <https://github.com/MhBaigtw/fixflow>
+- Last code commit, verified green in CI: `8ad1a3a`
+- This HANDOFF update is the next commit on `main`; it changes documentation only.
