@@ -23,10 +23,11 @@ services:
         value: ""
       - key: CSRF_TRUSTED_ORIGINS # extra origins only; https://<onrender host> is added automatically
         value: ""
-      # Proxies that append to X-Forwarded-For (Cloudflare edge + Render's proxy). With 1,
-      # the per-IP login throttle never fired on the live service (the rightmost entry
-      # varies per request); see docs/deploy.md section 4 for the live checks.
+      # Measured on the live service: X-Forwarded-For arrives as
+      # "<client>, <Cloudflare edge>, <Render internal 10.x>"; both proxy entries change
+      # per request. DRF takes the NUM_PROXIES-th entry from the right, so 3 = the client.
+      # (1 and 2 were tried first and never throttled; see docs/deploy.md section 4.)
       - key: NUM_PROXIES
-        value: "2"
+        value: "3"
       - key: DB_CONN_MAX_AGE
         value: "60"

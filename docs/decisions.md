@@ -176,3 +176,11 @@ Each entry gives the choice, the alternatives considered and the reason.
 - **Seeding without a shell:** free instances have no shell, so the build step seeds when `DEMO_PASSWORD` is set. `seed_demo` is idempotent, so redeploys are safe.
 - **Risk:** `NUM_PROXIES=1` is a starting value; Render's docs don't state the hop count. It's verified on the live service with forged `X-Forwarded-For` headers (docs/deploy.md section 4).
 - **CI:** the Docker job now runs the image with prod settings, gunicorn and Postgres. It asserts health is 200 over HTTP (redirect-exempt), docs are 301 over HTTP and 200 with `X-Forwarded-Proto: https`, and `/api/requests/` is 401.
+
+## D27. `NUM_PROXIES=3` on Render, found by measurement (not docs)
+- **What happened:** the first two guesses (1, then 2) left the per-IP login throttle **ineffective in production**. Every request was keyed on a different Cloudflare or Render proxy address. Local tests couldn't catch this because they only knew the chain shapes I had assumed.
+- **How it was settled:** a temporary authenticated endpoint (`/api/_diag/client-ip/`, live for one deploy, then removed) returned the caller's own `REMOTE_ADDR` and `X-Forwarded-For`. The chain was `<client>, <Cloudflare edge>, <Render internal>`, with `REMOTE_ADDR=127.0.0.1`.
+- **Choice:** `NUM_PROXIES=3`. It's spoof-resistant because client-supplied values are prepended on the left, and DRF counts from the right.
+- **Alternative considered:** trusting `CF-Connecting-IP` (it also equalled the client). Rejected: it needs custom ident code, and it's only safe if no request can reach the origin without passing Cloudflare, which Render doesn't document.
+- **Risk:** if Render changes its proxy topology, the count changes. The live check (forged-header logins must hit 429) is in docs/deploy.md section 4 and should be repeated after platform changes.
+- **Regression tests:** `test_render_chain_keys_on_real_client` and `test_too_few_proxies_lets_rotating_hops_dodge_the_limit`.

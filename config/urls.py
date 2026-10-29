@@ -4,7 +4,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import SimpleRouter
 
 from apps.accounts.views import EmailTokenObtainPairView, MeView, ThrottledTokenRefreshView
-from apps.core.views import ClientIPDiagnosticView, HealthView
+from apps.core.views import HealthView
 from apps.maintenance.views import MaintenanceRequestViewSet, StatsView
 from apps.properties.views import (
     EndTenancyView,
@@ -23,8 +23,6 @@ api_patterns = [
     path("me/", MeView.as_view(), name="me"),
     path("stats/", StatsView.as_view(), name="stats"),
     path("health/", HealthView.as_view(), name="health"),
-    # TEMPORARY: remove after the live NUM_PROXIES check.
-    path("_diag/client-ip/", ClientIPDiagnosticView.as_view(), name="diag-client-ip"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("properties/<int:property_id>/units/", UnitListCreateView.as_view(), name="unit-list"),

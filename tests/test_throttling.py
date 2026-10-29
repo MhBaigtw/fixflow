@@ -67,6 +67,48 @@ def test_behind_one_proxy_client_ip_comes_from_forwarded_for(anon, low_rates, se
     assert resp.status_code == 200
 
 
+def test_render_chain_keys_on_real_client(anon, low_rates, settings):
+    """The X-Forwarded-For shape measured on the live Render service:
+    "<client>, <Cloudflare edge>, <Render internal>", with both proxy hops changing on
+    every request and REMOTE_ADDR=127.0.0.1. NUM_PROXIES=3 must pick the client, even
+    when the caller prepends forged entries."""
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 3}
+    user = TenantFactory()
+
+    def chain(i, forged=None):
+        hops = f"203.0.113.7, 172.71.0.{i}, 10.192.0.{i}"
+        return f"{forged}, {hops}" if forged else hops
+
+    for i in range(3):
+        login(
+            anon, user.email, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=chain(i, f"6.6.6.{i}")
+        )
+    assert_throttled(
+        login(anon, user.email, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=chain(9))
+    )
+    # A different real client behind the same proxies is unaffected.
+    other = "198.51.100.9, 172.71.0.1, 10.192.0.1"
+    resp = login(anon, user.email, PASSWORD, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=other)
+    assert resp.status_code == 200
+
+
+def test_too_few_proxies_lets_rotating_hops_dodge_the_limit(anon, low_rates, settings):
+    """Documents the production bug: with NUM_PROXIES=2 the key is the Cloudflare hop,
+    which changes per request, so the limit never triggers."""
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 2}
+    user = TenantFactory()
+    codes = [
+        login(
+            anon,
+            user.email,
+            REMOTE_ADDR="127.0.0.1",
+            HTTP_X_FORWARDED_FOR=f"203.0.113.7, 172.71.0.{i}, 10.192.0.{i}",
+        ).status_code
+        for i in range(5)
+    ]
+    assert 429 not in codes
+
+
 def test_refresh_is_throttled(anon, low_rates):
     user = TenantFactory()
     refresh = login(anon, user.email, PASSWORD).json()["refresh"]
