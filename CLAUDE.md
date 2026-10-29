@@ -37,4 +37,14 @@ Read SPEC.md (what to build), TASKS.md (where we are) and docs/decisions.md (why
 .\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
 .\.venv\Scripts\python.exe manage.py runserver
 .\.venv\Scripts\python.exe manage.py seed_demo
+.\.venv\Scripts\python.exe manage.py createcachetable           # throttle counters (DatabaseCache)
+.\.venv\Scripts\python.exe manage.py seed_bulk --seed 1         # 10k benchmark data (DEBUG only)
+.\.venv\Scripts\python.exe scripts\benchmark.py --label X --compare-to Optimized
+.\.venv\Scripts\python.exe scripts\walkthrough.py https://fixflow-vzpj.onrender.com   # live
 ```
+
+## Deployment notes
+
+- Live: Render (free) + Neon. See docs/deploy.md. `render.yaml` is the source of truth for service config.
+- `NUM_PROXIES=3` on Render was MEASURED (see D27). Re-check it with forged X-Forwarded-For logins after any platform change.
+- Demo logins are public by Humayun's choice; the live demo password is in README. Never reuse the local `.env` password live.

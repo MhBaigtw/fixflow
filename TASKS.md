@@ -75,11 +75,12 @@
 - [x] docs/deploy.md: current Render + Neon free-tier terms with links
 - [x] render.yaml / settings for deploy (SSL DB, CSRF origins, CONN_MAX_AGE, cache table)
 - [x] Click-by-click steps for Humayun
-- [ ] Ask Humayun: demo logins private or public
-- [ ] STOP for Humayun
+- [x] Ask Humayun: demo logins private or public (chose public)
+- [x] STOP for Humayun
 
 ### Part F: Deploy and finish (Phase 4, after "continue")
-- [ ] Deploy; verify health/docs; seed_demo live; walkthrough against live URL
-- [ ] README: live URL, Mermaid diagram, results table, demo-login choice
-- [ ] docs/resume-bullets.md (every number linked to evidence)
+- [x] Deploy; verify health/docs; seed_demo live; walkthrough against live URL
+- [x] Live throttle check; fix NUM_PROXIES (1 and 2 wrong, 3 measured)
+- [x] README: live URL, Mermaid diagram, results table, demo-login choice
+- [x] docs/resume-bullets.md (every number linked to evidence)
 - [ ] Final verification, push, CI green, HANDOFF Checkpoint 2
