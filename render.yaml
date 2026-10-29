@@ -23,7 +23,10 @@ services:
         value: ""
       - key: CSRF_TRUSTED_ORIGINS # extra origins only; https://<onrender host> is added automatically
         value: ""
-      - key: NUM_PROXIES          # proxies in front of the app; verified after first deploy
-        value: "1"
+      # Proxies that append to X-Forwarded-For (Cloudflare edge + Render's proxy). With 1,
+      # the per-IP login throttle never fired on the live service (the rightmost entry
+      # varies per request); see docs/deploy.md section 4 for the live checks.
+      - key: NUM_PROXIES
+        value: "2"
       - key: DB_CONN_MAX_AGE
         value: "60"
