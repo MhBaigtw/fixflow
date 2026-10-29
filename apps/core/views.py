@@ -38,6 +38,30 @@ class HealthView(APIView):
         return Response({"status": "ok", "database": "ok"})
 
 
+class ClientIPDiagnosticView(APIView):
+    """TEMPORARY (Checkpoint 2, Part F): shows how the caller's own request reaches the
+    app, to set NUM_PROXIES correctly on Render. Authenticated; reveals only the
+    caller's own address chain. Remove after the live check (see docs/decisions.md)."""
+
+    throttle_classes = []
+
+    @extend_schema(exclude=True)
+    def get(self, request):
+        from rest_framework.settings import api_settings
+        from rest_framework.throttling import ScopedRateThrottle
+
+        return Response(
+            {
+                "remote_addr": request.META.get("REMOTE_ADDR"),
+                "x_forwarded_for": request.META.get("HTTP_X_FORWARDED_FOR"),
+                "cf_connecting_ip": request.META.get("HTTP_CF_CONNECTING_IP"),
+                "true_client_ip": request.META.get("HTTP_TRUE_CLIENT_IP"),
+                "num_proxies": api_settings.NUM_PROXIES,
+                "throttle_ident": ScopedRateThrottle().get_ident(request),
+            }
+        )
+
+
 def not_found(request, exception=None):
     return JsonResponse(error_body("not_found", "Not found."), status=404)
 
