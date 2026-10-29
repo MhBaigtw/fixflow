@@ -214,13 +214,32 @@ warm health #1: 200 0.445487s · #2: 200 1.732079s · #3: 200 0.264555s
 ### CI
 
 ```
-FINAL_CI_PLACEHOLDER
+Run 40951079197 on 8ccbcdb: https://github.com/MhBaigtw/fixflow/actions/runs/40951079197
+test: success   docker: success
+ruff check: All checks passed!   ruff format --check: 80 files already formatted
+makemigrations: No changes detected   check --deploy: System check identified no issues (0 silenced).
+pytest: 385 passed in 18.25s; Total coverage: 99.66% (gate 85%)
+docker job: image built; prod settings + gunicorn + Postgres smoke test passed
 ```
 
 ### git log --oneline (Checkpoint 2)
 
 ```
-FINAL_GITLOG_PLACEHOLDER
+8ccbcdb docs: README (live URL, diagram, results, public demo), resume bullets, Checkpoint 2 handoff
+e1c490b fix(deploy): NUM_PROXIES=3 (measured Render chain) and remove the temporary diagnostic
+1835c75 chore(diag): temporary authenticated client-IP diagnostic to set NUM_PROXIES on Render
+bfe6cf0 fix(deploy): NUM_PROXIES=2 on Render so the per-IP login throttle keys on the real client
+78c7992 docs(deploy): record public demo-login decision and throwaway demo password
+a0afb5f feat(deploy): Render blueprint, build script, Neon-ready prod settings, CI image smoke test
+bfbd6d2 docs: Phase 3 decisions, spec notes, env example and task list
+60fc528 feat: manager stats endpoint (open by status, overdue, median hours to resolve per category)
+70de79b feat: scoped throttling (login/refresh per IP, writes per user) with a shared database cache
+07b7c70 perf: record optimized benchmark, index evidence and before/after analysis
+acc01eb perf: remove list N+1, join unit/property into the transition lock, add 3 EXPLAIN-backed indexes
+1422f53 perf: record baseline benchmark (before any optimization)
+06a72cf feat(bench): seed_bulk dataset generator and in-process benchmark script
+abb45d5 fix: architect review (case-insensitive login, manager-owned priority, audited edits, unit race)
+(5022e86 = Checkpoint 1; the HANDOFF fill-in commit follows 8ccbcdb)
 ```
 
 ## Known gaps, risks, surprises
@@ -244,4 +263,5 @@ None required. Optional:
 
 - Repo: <https://github.com/MhBaigtw/fixflow>
 - Live: <https://fixflow-vzpj.onrender.com/api/docs/>
-- Final commit: FINAL_HASH_PLACEHOLDER
+- Last code/docs commit verified by CI: `8ccbcdb` (run 40951079197, green)
+- Final commit on `main`: the docs-only commit that adds this CI result to HANDOFF (it follows `8ccbcdb`; its own CI result is in Humayun's checkpoint summary)

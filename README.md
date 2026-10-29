@@ -12,7 +12,7 @@ Hosting is Render's free web service plus Neon's free Postgres. After 15 idle
 minutes the service spins down, so **the first request can take about a minute**;
 later requests are fast. See [docs/deploy.md](docs/deploy.md).
 
-**Status: all 4 phases complete.** CI runs the 383-test suite (99.66% coverage),
+**Status: all 4 phases complete.** CI runs the 385-test suite (99.66% coverage),
 lint, migration and deploy checks, and builds and smoke-tests the Docker image.
 
 ## Try it: public demo logins

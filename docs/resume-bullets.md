@@ -15,7 +15,7 @@ claim (it's a portfolio project), so none are claimed.
    - *Honest scope:* measured in-process on one laptop with local Postgres (no network). p50 repeats within about 7–12% ([analysis](benchmarks.md#analysis-baseline-vs-optimized)). The query-count reduction is the hardware-independent part.
 
 3. **Enforced object-level authorization (out-of-scope objects return 404 so existence never leaks), append-only audit logging with field-level edit diffs, and throttling with counters shared across gunicorn workers. Deployed on Render + Neon.**
-   - 383 tests at 99.66% coverage in [GitHub Actions CI](https://github.com/MhBaigtw/fixflow/actions), which also boots the Docker image with gunicorn and smoke-tests it.
+   - 385 tests at 99.66% coverage in [GitHub Actions CI](https://github.com/MhBaigtw/fixflow/actions/runs/40951079197), which also boots the Docker image with gunicorn and smoke-tests it.
    - Visibility rules: [`tests/test_visibility.py`](../tests/test_visibility.py). Audit diffs: [`tests/test_edits.py`](../tests/test_edits.py). Throttling: [`tests/test_throttling.py`](../tests/test_throttling.py).
    - Live checks on the deployed service are recorded in [HANDOFF.md](../HANDOFF.md#live-deployment-verification):
      - the full lifecycle walkthrough;
