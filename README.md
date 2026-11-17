@@ -60,7 +60,7 @@ Demo data is shared by everyone and re-seeded on each deploy. Writes are throttl
   candidate was rejected. See [docs/benchmarks.md](docs/benchmarks.md).
 - **Hardening.**
   - Scoped throttling, with counters in a shared database cache so all gunicorn workers count together.
-  - The client IP is taken from a measured proxy depth, so forged `X-Forwarded-For` headers are ignored. Verified live, after finding and fixing a production bug where the login limit never fired ([details](docs/deploy.md#4-live-verification-done-2026-10-29)).
+  - The client IP is taken from a measured proxy depth, so forged `X-Forwarded-For` headers are ignored. **Known issue (2026-11-17):** after the Render plan change, the per-IP login limit stopped firing again; the proxy depth needs re-measuring (the per-user write limit still works). Originally verified live after finding and fixing a production bug where the login limit never fired ([details](docs/deploy.md#4-live-verification-done-2026-10-29)).
   - One error shape for every 4xx/5xx.
 
 ## Architecture
@@ -108,21 +108,25 @@ with `req_created_idx`
 remaining ~20 ms is Python (JWT, serialization, rendering), not the database.
 [`tests/test_query_counts.py`](tests/test_query_counts.py) pins the query counts.
 
-### Live performance (free tier, not the same as the table above)
+### Live performance (not the same as the table above)
 
-On the deployed service, measured 2026-10-29 from one client in Toronto (through Cloudflare to Render Oregon and Neon), 15 requests per endpoint while warm:
+On the deployed service (Render Starter + Supabase session pooler, both in Oregon),
+measured 2026-11-17 from one client in Toronto through Cloudflare, 15 requests per
+endpoint:
 
 | Endpoint | Median | Min | Max |
 |---|---:|---:|---:|
-| `/api/health/` | 643 ms | 286 ms | 5,132 ms |
-| `/api/requests/` (manager) | 790 ms | 274 ms | 20,333 ms |
-| `/api/requests/{id}/` | 436 ms | 237 ms | 1,387 ms |
+| `/api/health/live/` (no DB) | 253 ms | 139 ms | 459 ms |
+| `/api/health/` (`SELECT 1`) | 156 ms | 143 ms | 335 ms |
+| `/api/docs/` | 160 ms | 134 ms | 336 ms |
 
-The free web instance has 0.1 CPU, and Neon suspends after 5 idle minutes, so
-expect multi-second outliers. The cause of the 20 s outlier wasn't isolated. Cold
-start after spin-down is recorded in [HANDOFF.md](HANDOFF.md). These numbers say
-"free tier works", not "fast"; the laptop benchmark above is the controlled
-measurement.
+The full walkthrough (4 logins, create, 9 row-locked transitions, 404/409 checks,
+audit log: 23 requests) took **6.6 s**, about 150–200 ms per transition. Most of
+each number is the network round trip from Toronto to Oregon, so the liveness
+check isn't really slower than readiness; the difference is noise. For comparison,
+the earlier free tier + Neon setup had warm medians of 436–790 ms with outliers
+up to 20 s ([HANDOFF.md](HANDOFF.md)). The laptop benchmark above remains the
+controlled measurement of app + DB cost.
 
 ## Workflow
 

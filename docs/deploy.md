@@ -78,6 +78,7 @@ These checks ran on Render free + Neon. The proxy-depth check (forged `X-Forward
   3. **Evidence:** a temporary, login-only diagnostic endpoint showed the real chain, `<client>, <Cloudflare edge>, <Render internal>`, with both proxy hops changing per request. A forged value is prepended on the left: `<forged>,<client>, <cf>, <render>`. DRF keys on the `NUM_PROXIES`-th entry from the right, so 1 and 2 picked a changing proxy address and every request got a fresh bucket.
   4. **Fix:** `NUM_PROXIES=3` (the client), then the diagnostic was removed. `tests/test_throttling.py` replays this exact chain shape, including a test showing that 2 never throttles.
   5. The re-test after the fix is recorded in HANDOFF.md.
+- **Regression after the move to Starter (2026-11-17):** the same check now fails. 11 forged-header failed logins and a plain follow-up all returned 401, with no 429. The per-user write throttle still works (60 × 409, then 429), so the shared cache is fine. Client-IP resolution is wrong again: the proxy chain on the Starter plan evidently differs from the free plan's, and `NUM_PROXIES=3` now keys on a rotating proxy address. **Open:** re-measure the chain (the same method as step 3 above) and set `NUM_PROXIES` to match.
 - **Not verified:** whether two *different* real clients get separate buckets (that needs a second network). Optional manual check: after being throttled on Wi-Fi, try logging in from a phone on mobile data. It should not be 429.
 
 ## 5. Decision: demo logins are PUBLIC (Humayun chose option b, 2026-10-27)

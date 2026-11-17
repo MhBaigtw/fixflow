@@ -265,3 +265,79 @@ None required. Optional:
 - Live: <https://fixflow-vzpj.onrender.com/api/docs/>
 - Last code/docs commit verified by CI: `8ccbcdb` (run 40951079197, green)
 - Final commit on `main`: the docs-only commit that adds this CI result to HANDOFF (it follows `8ccbcdb`; its own CI result is in Humayun's checkpoint summary)
+
+
+---
+
+# Post-launch update: database moved to Supabase (2026-11-17)
+
+## What changed
+- **Liveness endpoint:** `GET /api/health/live/` returns `{"status":"ok"}` with **no DB query, no auth, no throttle**. `/api/health/` stays the readiness check (`SELECT 1`, 503 if down). Both are exempt from the HTTPS redirect.
+- **`render.yaml`:** `plan: starter` (matches the dashboard upgrade), `healthCheckPath: /api/health/live/`, and the `DATABASE_URL` comment now describes the Supabase session pooler. `NUM_PROXIES=3` is unchanged.
+- **`prod.py`:** refuses to start (`ImproperlyConfigured`) if `DATABASE_URL` is Supabase's transaction pooler (`*.pooler.supabase.com:6543`). The comments describe the session pooler.
+- **Docs:** README (hosting, diagram, health checks, live performance), `docs/deploy.md` (Starter + Supabase terms, config table, pause risk, setup steps; section 5 demo logins unchanged), `docs/decisions.md` D28, CLAUDE.md deployment notes.
+- **CI smoke test:** also asserts `/api/health/live/` returns `{"status":"ok"}` over plain HTTP.
+
+## Tests
+- **New:**
+  - liveness makes 0 queries (`django_assert_num_queries(0)`);
+  - liveness returns 200 while `ensure_connection` and `cursor` both raise `OperationalError`, and readiness returns 503 in the same state;
+  - liveness ignores bad tokens and isn't throttled;
+  - a Supabase session-pooler URL parses (dotted `postgres.<ref>` user, port 5432, `sslmode=require`, `CONN_MAX_AGE=60`);
+  - a 6543 URL is refused.
+- **Mutation check:** making liveness run `SELECT 1` fails both DB tests.
+- **Local full run:** `391 passed in 1404.43s`, coverage 99.75%. ruff check clean, ruff format clean (80 files), makemigrations no changes, `check --deploy` (prod, WARNING) no issues, spectacular valid. The slow runtime is this machine.
+
+## CI
+Run 44041196031 on `41165f9`: https://github.com/MhBaigtw/fixflow/actions/runs/44041196031
+
+```
+test: success · docker: success (smoke test passed)
+pytest: 391 passed in 17.23s; Total coverage: 99.66%
+```
+
+## Render deploy
+GitHub's deployment records for `41165f9`:
+
+```
+deployment 7847254808: 07:45:49 in_progress -> 08:00:51 failure   (exactly 15 min)
+deployment 7847510383: 08:00:53 in_progress -> 08:02:12 success
+```
+
+The first attempt failed at Render's 15-minute health-check deadline. The previous version kept serving throughout: `/api/health/live/` returned the old build's 404 the whole time. The second attempt of the same commit went live in 79 s. **Cause not proven**; Render's deploy log for the failed attempt would show it.
+
+## Live verification (2026-11-17, after the deploy)
+15 requests each from Toronto:
+
+```
+/api/health/live/  200 x15  median 253 ms  min 139 ms  max 459 ms   {"status":"ok"}
+/api/health/       200 x15  median 156 ms  min 143 ms  max 335 ms   {"status":"ok","database":"ok"}
+/api/docs/         200 x15  median 160 ms  min 134 ms  max 336 ms
+```
+
+**Walkthrough** (`scripts/walkthrough.py https://fixflow-vzpj.onrender.com`, public demo password via env, tokens redacted): exit 0, **6.6 s** for the whole run, every step as expected.
+
+```
+health 200 · 4 logins 200 · properties/units/me 200 · create 201 (request #8 on the new DB) ·
+triage, assign, start, resolve, reopen, assign, start, resolve, close: all 200 ·
+carol (other unit) GET 404 · carol reopen 404 · triage closed -> 409 invalid_transition · events 200
+audit: None->submitted (4) · submitted->triaged (1) · triaged->assigned (1) · assigned->in_progress (2) ·
+in_progress->resolved (2) · resolved->triaged (4) · triaged->assigned (1) · assigned->in_progress (2) ·
+in_progress->resolved (2) · resolved->closed (4)
+```
+
+**Throttles:**
+- **Write (per user):** 62 no-op PATCHes gave `409 x 60, 429 x 2`, `retry_after_seconds: 40`. Works, so the database cache works on Supabase.
+- **Login (per IP): REGRESSION.** 11 failed logins with forged `X-Forwarded-For` and 1 plain follow-up all returned `401`, with no 429. On the free plan the same check returned 429 on the 11th attempt. The Starter plan's proxy chain must differ, so `NUM_PROXIES=3` no longer selects the client. **Not fixed in this change**; it needs a measurement (see below).
+
+## Supabase session pooler check (task 3)
+- **`sslmode=require`:** accepted. Readiness reported `database: ok` before and after this deploy, with `prod.py` forcing `require`.
+- **`CONN_MAX_AGE=60` + `CONN_HEALTH_CHECKS`:** fine in session mode, where each client connection owns a server connection for its lifetime. `SELECT … FOR UPDATE` worked live: 9 row-locked transitions in the walkthrough. Concurrency itself is covered by the test suite, not by a live race.
+- **Connections:** 2 gunicorn sync workers give ≤ 2 persistent clients (+1 during builds), against Supabase Free's 200 pooler clients and default pool size 15.
+- **Transaction pooler (6543):** must not be used; `prod.py` refuses it.
+
+## Known gaps / risks
+1. **Per-IP login throttle not working on Starter** (above).
+2. **Supabase pause risk:** Free projects pause after 1 week of inactivity, and Render's probe no longer touches the database. A quiet week could pause the project. The mitigation (a once-a-day readiness ping) isn't added; it's Humayun's call.
+3. **The first deploy attempt failed** after 15 minutes; cause unknown (above).
+4. **`docs/deploy.md` section 5** (kept unchanged as instructed) still says "reset the Neon branch" for wiping demo data. On Supabase that would be a database reset in the Supabase dashboard.

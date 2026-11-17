@@ -90,5 +90,6 @@
 - [x] render.yaml: plan starter, healthCheckPath /api/health/live/, Supabase session pooler comment
 - [x] prod settings checked for the session pooler; refuse the transaction pooler (6543)
 - [x] Docs: README, deploy.md, decisions D28
-- [ ] Full checks, push (ask), CI green
-- [ ] Live verification after deploy
+- [x] Full checks, push (ask), CI green (run 44041196031)
+- [x] Live verification after deploy (health, docs, walkthrough OK)
+- [ ] Per-IP login throttle regressed on Starter: re-measure proxy chain, set NUM_PROXIES
