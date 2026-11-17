@@ -49,7 +49,7 @@ From Supabase's docs, read 2026-11-17:
 | Deploy trigger | `autoDeployTrigger: checksPass`: Render deploys a commit only after GitHub CI passes on it. |
 | Workers | 2 gunicorn workers. |
 
-**Risk: Supabase pausing.** With the probe on the liveness path, the database only sees real API traffic. Supabase pauses Free projects after 1 week of inactivity and doesn't say exactly what counts. If the demo goes a week with no visitors, the project could pause, and readiness and every data endpoint would then fail until Humayun restores it in the Supabase dashboard. Mitigation if wanted: a scheduled once-a-day request to `/api/health/` (one `SELECT 1` per day, negligible usage), for example a small GitHub Actions cron. Not added yet; it's Humayun's call.
+**Risk: Supabase pausing.** With the probe on the liveness path, the database only sees real API traffic. Supabase pauses Free projects after 1 week of inactivity and doesn't say exactly what counts. If the demo goes a week with no visitors, the project could pause, and readiness and every data endpoint would then fail until Humayun restores it in the Supabase dashboard. **Mitigation (added, Humayun approved):** `.github/workflows/keepalive.yml` calls `/api/health/` once a day at 09:17 UTC, so the database gets one `SELECT 1` per day. The workflow fails visibly if the database is unreachable. GitHub disables scheduled workflows in repositories with no activity for 60 days, so an occasional commit or a manual run keeps it going.
 
 ## 3. Setup steps (accounts and secrets are Humayun's; Claude never sees them)
 

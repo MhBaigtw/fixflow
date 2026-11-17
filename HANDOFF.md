@@ -338,6 +338,6 @@ in_progress->resolved (2) · resolved->closed (4)
 
 ## Known gaps / risks
 1. **Per-IP login throttle not working on Starter** (above).
-2. **Supabase pause risk:** Free projects pause after 1 week of inactivity, and Render's probe no longer touches the database. A quiet week could pause the project. The mitigation (a once-a-day readiness ping) isn't added; it's Humayun's call.
+2. **Supabase pause risk:** Free projects pause after 1 week of inactivity, and Render's probe no longer touches the database. A quiet week could pause the project. **Mitigation added:** a daily keep-alive workflow (`.github/workflows/keepalive.yml`).
 3. **The first deploy attempt failed** after 15 minutes; cause unknown (above).
 4. **`docs/deploy.md` section 5** (kept unchanged as instructed) still says "reset the Neon branch" for wiping demo data. On Supabase that would be a database reset in the Supabase dashboard.

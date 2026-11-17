@@ -1,0 +1,28 @@
+name: Keep database active
+
+# Supabase pauses Free projects after a week of inactivity, and Render's health check
+# uses the DB-free liveness path. This makes one readiness request a day, which runs a
+# single SELECT 1 on the database (docs/decisions.md D28). It fails visibly if the
+# database is unreachable.
+# Note: GitHub disables scheduled workflows in repositories with no activity for 60 days.
+on:
+  schedule:
+    - cron: "17 9 * * *" # daily, 09:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Readiness check (/api/health/ runs SELECT 1)
+        run: |
+          for attempt in 1 2 3; do
+            if body=$(curl -fsS --max-time 30 https://fixflow-vzpj.onrender.com/api/health/); then
+              echo "$body"
+              echo "$body" | grep -q '"database":"ok"' && exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 20s"
+            sleep 20
+          done
+          echo "readiness check failed: the database may be paused or down"
+          exit 1
