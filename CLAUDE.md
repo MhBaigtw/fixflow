@@ -45,6 +45,7 @@ Read SPEC.md (what to build), TASKS.md (where we are) and docs/decisions.md (why
 
 ## Deployment notes
 
-- Live: Render (free) + Neon. See docs/deploy.md. `render.yaml` is the source of truth for service config.
+- Live: Render **Starter** (always on) + **Supabase Free via the SESSION pooler (port 5432)**. Never the transaction pooler (6543); prod.py refuses it (D28). See docs/deploy.md. `render.yaml` is the source of truth for service config.
+- Render's health check must stay on `/api/health/live/` (no DB query). A DB-touching probe on an always-on service burned Neon's free quota (D28).
 - `NUM_PROXIES=3` on Render was MEASURED (see D27). Re-check it with forged X-Forwarded-For logins after any platform change.
 - Demo logins are public by Humayun's choice; the live demo password is in README. Never reuse the local `.env` password live.

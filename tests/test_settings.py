@@ -29,7 +29,7 @@ def test_prod_forces_secure_settings(monkeypatch, fresh_prod):
     assert prod.SESSION_COOKIE_SECURE and prod.CSRF_COOKIE_SECURE
     assert prod.SECURE_HSTS_SECONDS >= 31536000
     assert prod.SECURE_SSL_REDIRECT is True
-    assert prod.SECURE_REDIRECT_EXEMPT == [r"^api/health/$"]
+    assert prod.SECURE_REDIRECT_EXEMPT == [r"^api/health/$", r"^api/health/live/$"]
 
 
 @pytest.fixture
@@ -61,6 +61,27 @@ def test_prod_db_sslmode_env_override(prod_env, fresh_prod):
     db = fresh_prod().DATABASES["default"]
     assert db["OPTIONS"]["sslmode"] == "disable"
     assert db["CONN_MAX_AGE"] == 0
+
+
+SUPABASE_SESSION = (
+    "postgres://postgres.abcdefref:pw@aws-0-us-west-2.pooler.supabase.com:{port}/postgres"
+)
+
+
+def test_prod_accepts_supabase_session_pooler(prod_env, fresh_prod):
+    prod_env.setenv("DATABASE_URL", SUPABASE_SESSION.format(port=5432))
+    db = fresh_prod().DATABASES["default"]
+    assert db["USER"] == "postgres.abcdefref"  # the dotted pooler user survives parsing
+    assert db["HOST"] == "aws-0-us-west-2.pooler.supabase.com"
+    assert int(db["PORT"]) == 5432
+    assert db["OPTIONS"]["sslmode"] == "require"
+    assert db["CONN_MAX_AGE"] == 60 and db["CONN_HEALTH_CHECKS"] is True
+
+
+def test_prod_refuses_supabase_transaction_pooler(prod_env, fresh_prod):
+    prod_env.setenv("DATABASE_URL", SUPABASE_SESSION.format(port=6543))
+    with pytest.raises(ImproperlyConfigured, match="session pooler"):
+        fresh_prod()
 
 
 def test_prod_hosts_and_csrf_origins(prod_env, fresh_prod):

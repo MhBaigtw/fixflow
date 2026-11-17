@@ -1,83 +1,75 @@
-# Deploying FixFlow: Render (web) + Neon (Postgres)
+# Deploying FixFlow: Render (web) + Supabase (Postgres)
 
-Checked against the providers' docs on **2026-10-27**. Free tiers change, so re-check
-these pages before relying on any number.
+**Current setup (2026-11-17):** Render web service on the **Starter** plan (always on),
+database on **Supabase Free** through the **session pooler**. Until mid-November the
+database was Neon Free; section 1.3 explains why it moved. Provider terms change, so
+re-check the linked pages before relying on any number.
 
-## 1. Free-tier terms that matter here
+## 1. Provider terms that matter here
 
-### Render, free web service ([render.com/docs/free](https://render.com/docs/free))
-- **Spin-down:** spins down after **15 minutes without inbound traffic**. The next request wakes it, and spin-up takes **about one minute** (browsers see a loading page).
-- **Hours:** **750 free instance hours per workspace per calendar month**. A spun-down service uses none. If they run out, free services are suspended until next month.
-- **Bandwidth and build minutes:** count against monthly included amounts. Without a payment method, going over suspends free services (bandwidth) or disables builds (build minutes).
-- **Other limits:** no persistent disk (local file changes are lost on spin-down), **no shell access**, one instance only, may be restarted at any time, outbound SMTP ports blocked.
-- **Render's own free Postgres expires after 30 days.** That's why the database is on Neon.
-- **Pre-deploy command:** documented as available for **paid** web services, private services and workers ([render.com/docs/deploys](https://render.com/docs/deploys)). The free page doesn't list it, so **we don't rely on it** (see section 2).
-- **Health checks:** `healthCheckPath` in the Blueprint. `2xx`/`3xx` within 5 s counts as healthy, and a new deploy only receives traffic once it passes ([render.com/docs/health-checks](https://render.com/docs/health-checks)). The health-check page doesn't say whether free instances get it; it's harmless if ignored.
-- **Docker:** the Blueprint spec allows `runtime: docker`, but no page I found states whether free instances support Docker deploys. **We use the native `python` runtime**, which works for certain and builds faster. The Dockerfile stays for local/CI use (CI builds it and smoke-tests it).
-- **Python version:** Render's current default is **3.14.x** ([render.com/docs/python-version](https://render.com/docs/python-version)). We pin **3.13** with a `.python-version` file (a partial version is allowed there) to match CI and the Dockerfile.
-- **Blueprint:** `render.yaml` with `plan: free` ([render.com/docs/blueprint-spec](https://render.com/docs/blueprint-spec)).
-  - `generateValue: true` creates a random secret, which we use for `SECRET_KEY`.
-  - `sync: false` prompts for a value once, at creation.
-- **Client IP:** Render's official docs don't state how many hops append to `X-Forwarded-For`. **Measured on the live service:** it arrives as `<client>, <Cloudflare edge>, <Render internal 10.x>` with `REMOTE_ADDR=127.0.0.1`, and both proxy entries change on every request. So **`NUM_PROXIES=3`** (section 4).
+### 1.1 Render web service
+- **Plan: Starter (paid, always on).** Humayun upgraded it in the dashboard, and `render.yaml` now says `plan: starter` so a Blueprint sync doesn't revert it. The service no longer spins down, so there is no cold start.
+- **Health checks** ([render.com/docs/health-checks](https://render.com/docs/health-checks)): Render probes `healthCheckPath` every few seconds. `2xx`/`3xx` within 5 s is healthy, and a new deploy only receives traffic once it passes. On an always-on service that means a probe every few seconds, around the clock, so the probe must be cheap (section 1.3).
+- **Pre-deploy command** ([render.com/docs/deploys](https://render.com/docs/deploys)): available on paid services. We still run migrations in the build step (section 2), which works on any plan; moving them to `preDeployCommand` is a possible later change, not needed now.
+- **Python version:** Render's default is 3.14.x ([render.com/docs/python-version](https://render.com/docs/python-version)). We pin **3.13** with `.python-version` to match CI and the Dockerfile.
+- **Blueprint** ([render.com/docs/blueprint-spec](https://render.com/docs/blueprint-spec)): `generateValue: true` creates `SECRET_KEY`; `sync: false` values (`DATABASE_URL`, `DEMO_PASSWORD`) are entered once in the dashboard.
+- **Client IP:** Render's docs don't state the `X-Forwarded-For` hop count. **Measured on the live service:** `<client>, <Cloudflare edge>, <Render internal 10.x>`, `REMOTE_ADDR=127.0.0.1`, both proxy entries rotating per request. So **`NUM_PROXIES=3`** (section 4).
 
-### Neon, Free plan ([neon.com/docs/introduction/plans](https://neon.com/docs/introduction/plans))
-- **Storage:** **1 GB per project** (20 GB across all projects; up to 100 projects). Inserts, updates and deletes fail when it's full; data is never deleted. The 10k benchmark dataset isn't deployed; only `seed_demo`'s handful of rows.
-- **Compute:** **100 CU-hours per project per month** (about 400 h at 0.25 CU). It's suspended until next month if exceeded.
-- **Scale to zero:** after **5 minutes idle**, which can't be disabled on Free. The first query after that pays a resume delay (not quantified in the docs; measured in Part F).
-- **Network transfer:** 5 GB per project per month.
-- **Connections** ([neon.com/docs/connect/connection-pooling](https://neon.com/docs/connect/connection-pooling)):
-  - **Pooled** (`-pooler` in the hostname): PgBouncer in **transaction mode**. Session features (SET, LISTEN, SQL-level PREPARE, session advisory locks) don't work.
-  - **Direct:** limited by `max_connections` (**104 at 0.25 CU**). Neon recommends direct for migrations.
-  - Connection strings include **`sslmode=require`**.
+### 1.2 Supabase, Free plan
+From Supabase's docs, read 2026-11-17:
+- **Database size: 500 MB** per project ([pricing](https://supabase.com/pricing), [usage quotas](https://supabase.com/docs/guides/platform/org-based-billing)). The demo is a few hundred rows; the 10k benchmark dataset is never deployed.
+- **Egress: 5 GB** included (plus 5 GB cached egress) ([pricing](https://supabase.com/pricing)).
+- **Pausing:** "Free projects are paused after 1 week of inactivity" ([pricing](https://supabase.com/pricing)). The docs I read don't define what counts as activity. See the risk note in section 2.
+- **Compute (Nano):** up to 60 direct connections, **200 pooler clients**, **default pool size 15** per database role ([compute and disk](https://supabase.com/docs/guides/platform/compute-and-disk)).
+- **Connection modes** ([connecting to Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres), [pooling and limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)):
+  - **Session pooler**: `aws-<n>-<region>.pooler.supabase.com`, **port 5432**, user `postgres.<project-ref>`. Full session semantics; Supabase's recommended option for a persistent backend on an IPv4 network.
+  - **Transaction pooler**: same host, **port 6543**. Returns the server connection to the pool after every transaction, so session state doesn't survive: no prepared statements, no `SET`, no session advisory locks, no `WITH HOLD` cursors. Meant for serverless and edge functions. **Not for this app** (section 2).
+  - **SSL:** Supabase recommends `sslmode=require`.
+
+### 1.3 Why the database moved from Neon (decision D28)
+- Neon Free gives **100 CU-hours per project per month** and suspends compute after **5 idle minutes** ([neon.com/docs/introduction/plans](https://neon.com/docs/introduction/plans)). On Render's free plan the web service slept too, so the database idled most of the time.
+- After the upgrade to Starter, the web service never sleeps, and Render's health check pointed at `/api/health/`, which runs `SELECT 1`. A query every few seconds, forever, meant Neon **never** reached its 5-minute idle window. The compute ran 24/7 and used up the 100 CU-hours by mid-month.
+- Humayun moved the database to Supabase Free (session pooler, West US / Oregon), changed `DATABASE_URL` in Render and redeployed. The build step ran `migrate`, `createcachetable` and `seed_demo` against the new database.
+- The code fix is the **liveness / readiness split** below, so the platform's probe never queries the database again, whichever provider hosts it.
 
 ## 2. How the app is configured for that
 
 | Concern | Decision |
 |---|---|
-| Migrations without pre-deploy | `bin/render-build.sh` runs `migrate`, `createcachetable` and (if `DEMO_PASSWORD` is set) `seed_demo` in the **build** step. A failed build never goes live, so the old version keeps serving. Fallback if the build can't reach the DB: move those lines to the start command (each wake-up then pays roughly a 1–2 s no-op migrate). |
-| Pooled vs direct | **Direct** connection string. With 2 gunicorn workers and persistent connections we use ~2 of 104 connections, migrations need a direct connection anyway, and transaction pooling buys nothing at this size. |
-| TLS to the DB | `prod.py` sets `sslmode=require` unless the URL already sets an sslmode (`DB_SSLMODE` overrides; only docker-compose sets `disable`). |
-| Connection reuse | `CONN_MAX_AGE=60` (`DB_CONN_MAX_AGE`) avoids a TLS handshake per request. `CONN_HEALTH_CHECKS=True` makes Django test a reused connection first, so connections Neon dropped while scaled to zero are replaced instead of failing a request. |
-| Hosts / CSRF | `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` from env, **plus** Render's `RENDER_EXTERNAL_HOSTNAME` (set automatically) and `https://` + that host. No values to type for the default `onrender.com` URL. |
-| HTTPS | Render terminates TLS. `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`, and `SECURE_SSL_REDIRECT` is on with `/api/health/` exempt. CI smoke-tests this: health 200 over plain HTTP, docs 301 → 200 with `X-Forwarded-Proto: https`. |
-| Health check | `/api/health/` (checks the DB; 503 if it's down). |
-| Secrets | `SECRET_KEY` generated by Render. `DATABASE_URL` and `DEMO_PASSWORD` are entered by Humayun in Render (`sync: false`). Nothing secret is in the repo. |
-| Throttle counters | `DatabaseCache` table, created at build. `NUM_PROXIES` from env (see section 4). |
+| Health checks | **Liveness** `/api/health/live/`: returns `{"status":"ok"}` with **no database query** (tested with zero queries and with the DB forced down). Render's `healthCheckPath` points here. **Readiness** `/api/health/`: runs `SELECT 1` and returns 503 if the database is unreachable. Use it for manual checks and the walkthrough, not for a probe that fires every few seconds. |
+| Connection mode | **Session pooler, port 5432.** One server connection per client connection for as long as the client stays connected, so `transaction.atomic()` and `SELECT … FOR UPDATE` row locks behave exactly as on a direct connection. **Never the transaction pooler (6543):** `prod.py` refuses to start if `DATABASE_URL` points at `*.pooler.supabase.com:6543` (tested). |
+| Connection count | 2 gunicorn sync workers, each holding at most 1 persistent connection, so **about 2 client connections**, plus 1 short-lived one during each build. That's far below the free pooler's 200-client limit and its default pool of 15. |
+| TLS to the DB | `prod.py` sets `sslmode=require` unless the URL already sets one. Verified live: readiness reports `database: ok` on Supabase. |
+| Connection reuse | `CONN_MAX_AGE=60` avoids a TLS handshake per request. `CONN_HEALTH_CHECKS=True` makes Django test a reused connection before using it, so a connection the pooler closed is replaced instead of failing a request. In session mode a reused connection is the same server session, so this is safe. |
+| Migrations | `bin/render-build.sh` runs `migrate`, `createcachetable` and (if `DEMO_PASSWORD` is set) `seed_demo` in the **build** step. A failed build never goes live. |
+| Hosts / CSRF | `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` from env, **plus** Render's `RENDER_EXTERNAL_HOSTNAME` and `https://` + that host, added automatically. |
+| HTTPS | Render terminates TLS. `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`; `SECURE_SSL_REDIRECT` is on, with **both** health paths exempt (probes use plain HTTP). CI smoke-tests this. |
+| Secrets | `SECRET_KEY` generated by Render. `DATABASE_URL` and `DEMO_PASSWORD` entered by Humayun in Render (`sync: false`). Nothing secret is in the repo. |
+| Throttle counters | `DatabaseCache` table, created at build. `NUM_PROXIES=3` (measured, section 4). |
 | Deploy trigger | `autoDeployTrigger: checksPass`: Render deploys a commit only after GitHub CI passes on it. |
-| Workers | 2 gunicorn workers (free instance: 0.1 CPU, 512 MB). |
+| Workers | 2 gunicorn workers. |
 
-## 3. Steps for Humayun (accounts and secrets are yours; I never see them)
+**Risk: Supabase pausing.** With the probe on the liveness path, the database only sees real API traffic. Supabase pauses Free projects after 1 week of inactivity and doesn't say exactly what counts. If the demo goes a week with no visitors, the project could pause, and readiness and every data endpoint would then fail until Humayun restores it in the Supabase dashboard. Mitigation if wanted: a scheduled once-a-day request to `/api/health/` (one `SELECT 1` per day, negligible usage), for example a small GitHub Actions cron. Not added yet; it's Humayun's call.
 
-### A. Neon (database)
-1. Go to <https://neon.com> → **Sign up** (GitHub or email). Choose the **Free** plan. Don't enter payment details; if asked, stop and tell me.
-2. **Create project.**
-   - Project name: `fixflow`.
-   - Postgres version: **16** (it's what CI tests against; if only 17 is offered, choose 17 and tell me).
-   - Region: **AWS US West 2 (Oregon)**, the same area as the Render service.
-3. On the project dashboard, click **Connect**.
-   - Branch `main`, database `neondb`, role `neondb_owner`.
-   - Make sure **Connection pooling is OFF**, so the host has **no** `-pooler`.
-   - Copy the connection string. It looks like `postgresql://neondb_owner:…@ep-….us-west-2.aws.neon.tech/neondb?sslmode=require…`.
-   - **Don't paste it into chat**; it goes only into Render in step B4.
+## 3. Setup steps (accounts and secrets are Humayun's; Claude never sees them)
+
+This is what was done, recorded so the setup can be rebuilt.
+
+### A. Supabase (database)
+1. <https://supabase.com> → sign in → **New project**, Free plan. Region **West US (Oregon)**, near the Render service. Set a strong database password and keep it in your password manager.
+2. Project → **Connect** → **Session pooler** (not "Transaction pooler", not "Direct" unless you have IPv6 or the IPv4 add-on). Copy the URI. It looks like `postgresql://postgres.<project-ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres`. Check that the port is **5432**.
+3. Don't paste it into chat. It goes only into Render.
 
 ### B. Render (web service)
-1. Go to <https://render.com> → **Get Started** → sign up **with GitHub** as `MhBaigtw`. If it asks for a credit card for the free web service, stop and tell me.
-2. Allow Render to access the `MhBaigtw/fixflow` repository (only that repo is fine).
-3. Dashboard → **New +** → **Blueprint** → pick `MhBaigtw/fixflow`, branch `main`. Render reads `render.yaml` and shows one service, `fixflow` (plan: Free).
-4. It asks for the `sync: false` values:
-   - **`DATABASE_URL`:** paste the Neon **direct** string from A3.
-   - **`DEMO_PASSWORD`:** depends on the demo-login decision (section 5). To use the same password as your local `.env`, so I can run the walkthrough without ever seeing it, copy it to your clipboard **without printing it**, run from the project folder in PowerShell:
-     ```powershell
-     (Select-String -Path .env -Pattern '^DEMO_PASSWORD=').Line.Split('=', 2)[1] | Set-Clipboard
-     ```
-     Then paste into Render. Leave the field empty to skip demo data.
-   - Leave **`ALLOWED_HOSTS`** and **`CSRF_TRUSTED_ORIGINS`** empty. The `onrender.com` host is added automatically; they're only for a custom domain later.
-   - **`SECRET_KEY`** is generated by Render, so there's nothing to do. (If you ever need one yourself, generate it straight to the clipboard: `.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(50))" | Set-Clipboard`.)
-5. Click **Apply**. The first build takes a few minutes. When it shows **Live**, copy the service URL (e.g. `https://fixflow-xxxx.onrender.com`) and send me **only the URL**.
+1. Service `fixflow` → **Environment** → `DATABASE_URL` → paste the session pooler URI → **Save, rebuild and deploy**. The build step migrates and seeds the new database.
+2. After a Blueprint change (like this one), check **Settings**: the plan should be **Starter** and the **Health Check Path** should be `/api/health/live/`.
+3. Other env values (`DEMO_PASSWORD`, `NUM_PROXIES=3`, `DB_CONN_MAX_AGE=60`) are unchanged.
 
 ## 4. Live verification (done 2026-10-29)
 
-- `/api/health/` 200, `/api/docs/` 200, `/api/schema/` 200. Plain HTTP → 301 to HTTPS. HSTS and nosniff headers present. Build-step migrations and `seed_demo` reached Neon: the demo logins work and the seeded requests exist.
+These checks ran on Render free + Neon. The proxy-depth check (forged `X-Forwarded-For` logins must hit 429) was repeated after the move to Starter + Supabase; that result and the other post-move checks are in HANDOFF.md.
+
+- `/api/health/` 200, `/api/docs/` 200, `/api/schema/` 200. Plain HTTP → 301 to HTTPS. HSTS and nosniff headers present. Build-step migrations and `seed_demo` reached the database (then Neon): the demo logins work and the seeded requests exist.
 - `scripts/walkthrough.py https://fixflow-vzpj.onrender.com`: every step returned the expected status (output in HANDOFF.md).
 - **Write throttle (per user)** works across both gunicorn workers: 62 no-op PATCHes as one user gave 60 × 409, then 2 × 429 with `retry_after_seconds`.
 - **Login throttle (per IP): a real bug found and fixed.**

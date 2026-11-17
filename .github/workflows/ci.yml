@@ -93,8 +93,9 @@ jobs:
             sleep 1
           done
           echo
-          # Health is exempt from the SSL redirect (platform health checks use plain HTTP).
+          # Both health checks are exempt from the SSL redirect (platform probes use plain HTTP).
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/health/)" = 200
+          test "$(curl -s http://localhost:8000/api/health/live/)" = '{"status":"ok"}'
           # Everything else redirects to HTTPS unless the proxy says the request was HTTPS.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/docs/)" = 301
           test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' \

@@ -184,3 +184,22 @@ Each entry gives the choice, the alternatives considered and the reason.
 - **Alternative considered:** trusting `CF-Connecting-IP` (it also equalled the client). Rejected: it needs custom ident code, and it's only safe if no request can reach the origin without passing Cloudflare, which Render doesn't document.
 - **Risk:** if Render changes its proxy topology, the count changes. The live check (forged-header logins must hit 429) is in docs/deploy.md section 4 and should be repeated after platform changes.
 - **Regression tests:** `test_render_chain_keys_on_real_client` and `test_too_few_proxies_lets_rotating_hops_dodge_the_limit`.
+
+## D28. Database moved from Neon to Supabase; liveness/readiness split
+- **What happened:** the Render service was upgraded to Starter (always on). Its health check pointed at `/api/health/`, which runs `SELECT 1`, every few seconds. Neon Free only saves compute by suspending after 5 idle minutes, and that window never came. The compute ran continuously and used the plan's **100 CU-hours by mid-month**. On the free Render plan this had been hidden, because the web service itself slept.
+- **Move:** Humayun moved the database to **Supabase Free** (session pooler, port 5432, West US / Oregon), changed `DATABASE_URL` in Render and redeployed. The build step migrated and seeded the new database. The Neon project still exists; deleting it is Humayun's decision.
+- **Code fix (provider-independent):**
+  - `GET /api/health/live/` is the **liveness** check: no auth, no throttle, **no database query** (tests assert zero queries and a 200 while every DB access raises).
+  - `/api/health/` stays the **readiness** check (`SELECT 1`, 503 when down).
+  - Render's `healthCheckPath` is now the liveness path. Both are exempt from the HTTPS redirect.
+  - `render.yaml` says `plan: starter` so a Blueprint sync doesn't revert the dashboard upgrade.
+- **Session pooler, never the transaction pooler:**
+  - **Why 5432 works:** each client connection gets its own server connection for the life of the session. `transaction.atomic()`, `SELECT … FOR UPDATE` (the state machine's row lock), persistent connections (`CONN_MAX_AGE=60`) and psycopg's prepared statements all behave as on a direct connection. `CONN_HEALTH_CHECKS` replaces a connection the pooler closed.
+  - **Why 6543 is out:** the **transaction pooler (port 6543) must NOT be used.** It hands the server connection back after every transaction, and Supabase documents that prepared statements and session state (SET, session advisory locks, WITH HOLD cursors) don't work there. Persistent Django connections would silently move between server sessions. `prod.py` raises `ImproperlyConfigured` at startup if `DATABASE_URL` points at `*.pooler.supabase.com:6543` (tested).
+  - **Connection budget:** 2 gunicorn sync workers, each holding at most 1 connection, so ~2 clients (+1 during a build). Supabase Free (Nano) allows 200 pooler clients with a default pool of 15.
+- **Supabase Free limits** (docs read 2026-11-17): 500 MB database, 5 GB egress, and projects pause after **1 week of inactivity**.
+- **Inactivity is the remaining risk.** The brief assumed constant traffic keeps the project from pausing. After this change that's no longer true for the platform's own traffic: the every-few-seconds probe no longer reaches the database. Only real API use does, and Supabase doesn't define what counts as activity. A week without visitors could pause the project. A once-a-day readiness ping (e.g. a GitHub Actions cron hitting `/api/health/`) would cost one `SELECT 1` per day. It's not added; that's Humayun's call.
+- **Alternatives considered:**
+  - Keep Neon and leave readiness as the probe: impossible within the free quota on an always-on service.
+  - Neon's paid plan: Humayun chose a free database.
+  - Supabase direct connection: Supabase's docs say it needs IPv6 or the paid IPv4 add-on, and recommend the session pooler for persistent backends on IPv4. Humayun chose the session pooler; I didn't test Render's IPv6 egress.

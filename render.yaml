@@ -1,21 +1,26 @@
-# Render Blueprint for FixFlow (web service only; the database is on Neon).
+# Render Blueprint for FixFlow (web service only; the database is on Supabase).
 # Setup steps and the reasoning behind each value: docs/deploy.md
 services:
   - type: web
     name: fixflow
     runtime: python
-    plan: free
-    region: oregon            # pair with a Neon project in AWS us-west-2 (Oregon)
+    plan: starter             # always on (upgraded from free in the dashboard; kept in sync here)
+    region: oregon            # same area as the Supabase project (West US, Oregon)
     buildCommand: bash bin/render-build.sh
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --access-logfile -
-    healthCheckPath: /api/health/
+    # Liveness only: no DB query. Render probes this every few seconds forever; pointing it
+    # at /api/health/ (SELECT 1) kept Neon from ever idling and used up its CU-hours (D28).
+    healthCheckPath: /api/health/live/
     autoDeployTrigger: checksPass   # deploy only after GitHub CI passes
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.prod
       - key: SECRET_KEY
         generateValue: true       # Render generates it; nobody has to copy a secret
-      - key: DATABASE_URL         # Neon DIRECT connection string (not -pooler), sslmode=require
+      # Supabase SESSION pooler: postgres.<project-ref>:...@aws-<n>-<region>.pooler.supabase.com:5432/postgres
+      # (copy from Connect > Session pooler). Never the transaction pooler on port 6543.
+      # sslmode=require is enforced by prod.py if the URL doesn't set it.
+      - key: DATABASE_URL
         sync: false
       - key: DEMO_PASSWORD        # optional; set to seed demo users at build time
         sync: false

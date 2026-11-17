@@ -89,6 +89,41 @@ def test_health_ignores_bad_token(anon):
     assert anon.get("/api/health/").status_code == 200
 
 
+def test_liveness_ok_without_any_db_queries(anon, django_assert_num_queries):
+    with django_assert_num_queries(0):
+        resp = anon.get("/api/health/live/")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+def test_liveness_ok_when_database_is_down(anon):
+    """Any attempt to reach the database during the request would raise."""
+    down = OperationalError("db down")
+    base = "django.db.backends.base.base.BaseDatabaseWrapper"
+    with (
+        mock.patch(f"{base}.ensure_connection", side_effect=down),
+        mock.patch(f"{base}.cursor", side_effect=down),
+    ):
+        live = anon.get("/api/health/live/")
+        ready = anon.get("/api/health/")
+    assert live.status_code == 200
+    assert live.json() == {"status": "ok"}
+    # Readiness still reports the outage, so the two checks really differ.
+    assert_error(ready, 503, "service_unavailable")
+
+
+def test_liveness_needs_no_auth_and_ignores_bad_token(anon):
+    anon.credentials(HTTP_AUTHORIZATION="Bearer garbage")
+    assert anon.get("/api/health/live/").status_code == 200
+
+
+def test_liveness_is_never_throttled(anon, monkeypatch):
+    from rest_framework.throttling import ScopedRateThrottle
+
+    monkeypatch.setattr(ScopedRateThrottle, "THROTTLE_RATES", {"login": "1/min"})
+    assert all(anon.get("/api/health/live/").status_code == 200 for _ in range(5))
+
+
 def test_schema_and_docs(anon):
     schema = anon.get("/api/schema/")
     assert schema.status_code == 200

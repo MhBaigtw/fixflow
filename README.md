@@ -6,11 +6,12 @@ tenants confirm the fix or reopen the request. Every status change and every edi
 audited.
 
 **Live:** <https://fixflow-vzpj.onrender.com/api/docs/> (Swagger UI) ·
-health: [`/api/health/`](https://fixflow-vzpj.onrender.com/api/health/)
+liveness: [`/api/health/live/`](https://fixflow-vzpj.onrender.com/api/health/live/) ·
+readiness (checks the DB): [`/api/health/`](https://fixflow-vzpj.onrender.com/api/health/)
 
-Hosting is Render's free web service plus Neon's free Postgres. After 15 idle
-minutes the service spins down, so **the first request can take about a minute**;
-later requests are fast. See [docs/deploy.md](docs/deploy.md).
+Hosting is an always-on Render Starter web service with Supabase Free Postgres
+(session pooler). See [docs/deploy.md](docs/deploy.md), including why the database
+moved from Neon.
 
 **Status: all 4 phases complete.** CI runs the 385-test suite (99.66% coverage),
 lint, migration and deploy checks, and builds and smoke-tests the Docker image.
@@ -71,10 +72,17 @@ flowchart LR
     gunicorn --> views["DRF views<br/>JWT auth · role permissions ·<br/>ScopedRateThrottle · error handler"]
     views --> selectors["selectors.py<br/>visibility scoping · filters · stats"]
     views --> services["services/<br/>transitions · edits · comments · tenancies"]
-    services -->|"one transaction:<br/>SELECT … FOR UPDATE, UPDATE,<br/>INSERT RequestEvent"| db[("Neon Postgres")]
+    services -->|"one transaction:<br/>SELECT … FOR UPDATE, UPDATE,<br/>INSERT RequestEvent"| db[("Supabase Postgres<br/>(session pooler :5432)")]
     selectors --> db
     views -->|throttle counters| cache[("django_cache table<br/>(DatabaseCache, same DB)")]
+    probe["Render health check<br/>(every few seconds)"] -->|"/api/health/live/<br/>no DB query"| gunicorn
 ```
+
+- **Health checks:** `/api/health/live/` (liveness) answers without touching the
+  database, and it's what Render probes every few seconds. `/api/health/`
+  (readiness) runs `SELECT 1` and returns 503 if the database is down. Probing
+  readiness around the clock kept Neon's compute from ever idling and used up its
+  free quota ([D28](docs/decisions.md)).
 
 - **Views** stay thin: they validate input, call one service or selector, and serialize.
 - **Services** hold every business rule; `transitions.py` is the only place a status changes.
@@ -141,7 +149,8 @@ All endpoints are under `/api/`.
 |---|---|---|
 | `auth/token/`, `auth/token/refresh/` | POST | anyone (10/min per IP) |
 | `me/` | GET | authenticated |
-| `health/` | GET | anyone (503 if DB down) |
+| `health/live/` | GET | anyone: liveness, no DB query (Render's health check) |
+| `health/` | GET | anyone: readiness, `SELECT 1` (503 if DB down) |
 | `stats/` | GET | managers: open by status, overdue, median hours to resolve per category |
 | `properties/`, `properties/{id}/` | GET, POST, PUT, PATCH | managers (own properties) |
 | `properties/{id}/units/` | GET, POST | owning manager |
@@ -162,7 +171,7 @@ Errors always look like `{"error": {"code", "message", "details"}}`.
 
 Python 3.13 · Django 5.2 LTS · Django REST Framework 3.18 · SimpleJWT ·
 drf-spectacular · django-filter · PostgreSQL 16 (psycopg 3) · gunicorn + WhiteNoise ·
-pytest, factory_boy, ruff · GitHub Actions · Render + Neon.
+pytest, factory_boy, ruff · GitHub Actions · Render + Supabase.
 
 ## Local setup (Windows, native PostgreSQL, no Docker)
 
@@ -228,6 +237,6 @@ The walkthrough's output against the live service is recorded in
 - [SPEC.md](SPEC.md): what was built, phase by phase.
 - [docs/decisions.md](docs/decisions.md): every non-obvious choice and its reason.
 - [docs/benchmarks.md](docs/benchmarks.md): measurements and index evidence.
-- [docs/deploy.md](docs/deploy.md): free-tier terms, deploy configuration and setup steps.
+- [docs/deploy.md](docs/deploy.md): provider terms (Render Starter, Supabase Free), deploy configuration, setup steps and the Neon → Supabase move.
 - [docs/resume-bullets.md](docs/resume-bullets.md): claims, each linked to its evidence.
 - Docker (optional): `Dockerfile` (slim, non-root, gunicorn) and `docker-compose.yml`. CI builds the image and smoke-tests it against Postgres.

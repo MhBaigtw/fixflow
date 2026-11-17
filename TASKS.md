@@ -83,4 +83,12 @@
 - [x] Live throttle check; fix NUM_PROXIES (1 and 2 wrong, 3 measured)
 - [x] README: live URL, Mermaid diagram, results table, demo-login choice
 - [x] docs/resume-bullets.md (every number linked to evidence)
-- [ ] Final verification, push, CI green, HANDOFF Checkpoint 2
+- [x] Final verification, push, CI green, HANDOFF Checkpoint 2
+
+## Post-launch: database moved to Supabase (2026-11-17)
+- [x] GET /api/health/live/ (no DB, no auth, no throttle) + tests (0 queries, DB down)
+- [x] render.yaml: plan starter, healthCheckPath /api/health/live/, Supabase session pooler comment
+- [x] prod settings checked for the session pooler; refuse the transaction pooler (6543)
+- [x] Docs: README, deploy.md, decisions D28
+- [ ] Full checks, push (ask), CI green
+- [ ] Live verification after deploy

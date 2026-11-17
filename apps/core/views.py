@@ -9,9 +9,28 @@ from rest_framework.views import APIView
 from .exceptions import error_body
 
 
-class HealthView(APIView):
+class LivenessView(APIView):
+    """Liveness: the process is up and serving. Never touches the database, so the
+    platform's health checks (every few seconds, forever, on an always-on service)
+    don't keep the database busy or count against its usage limits."""
+
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = []
+
+    @extend_schema(
+        responses={200: inline_serializer("Liveness", {"status": serializers.CharField()})}
+    )
+    def get(self, request):
+        return Response({"status": "ok"})
+
+
+class HealthView(APIView):
+    """Readiness: the app can reach its database (SELECT 1). 503 if it can't."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = []
 
     @extend_schema(
         responses={
