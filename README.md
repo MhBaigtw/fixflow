@@ -60,7 +60,7 @@ Demo data is shared by everyone and re-seeded on each deploy. Writes are throttl
   candidate was rejected. See [docs/benchmarks.md](docs/benchmarks.md).
 - **Hardening.**
   - Scoped throttling, with counters in a shared database cache so all gunicorn workers count together.
-  - The client IP is taken from a measured proxy depth, so forged `X-Forwarded-For` headers are ignored. **Known issue (2026-11-17):** after the Render plan change, the per-IP login limit stopped firing again; the proxy depth needs re-measuring (the per-user write limit still works). Originally verified live after finding and fixing a production bug where the login limit never fired ([details](docs/deploy.md#4-live-verification-done-2026-10-29)).
+  - The client IP is taken from a measured proxy depth, so forged `X-Forwarded-For` headers are ignored. The depth changed when the Render plan changed (3 on free, **2 on Starter**), so it was re-measured and re-verified live on 2026-11-17. It was originally verified live after finding and fixing a production bug where the login limit never fired ([details](docs/deploy.md#4-live-verification-done-2026-10-29)).
   - One error shape for every 4xx/5xx.
 
 ## Architecture
@@ -217,7 +217,7 @@ Prerequisites: Python 3.13 (`py` launcher) and PostgreSQL 16 running locally.
 | `DEMO_PASSWORD` | for `seed_demo` | none | password for every demo user |
 | `JWT_ACCESS_MINUTES` / `JWT_REFRESH_DAYS` | no | `15` / `1` | token lifetimes |
 | `THROTTLE_LOGIN_RATE` / `THROTTLE_REFRESH_RATE` / `THROTTLE_WRITE_RATE` | no | `10/min` / `10/min` / `60/min` | DRF rate strings |
-| `NUM_PROXIES` | prod | `0` | proxies appending to `X-Forwarded-For` (Render: `3`, measured; see [deploy.md](docs/deploy.md#4-live-verification-done-2026-10-29)) |
+| `NUM_PROXIES` | prod | `0` | proxies appending to `X-Forwarded-For` (Render Starter: `2`, measured; see [deploy.md](docs/deploy.md#4-live-verification-done-2026-10-29)) |
 | `DB_SSLMODE` / `DB_CONN_MAX_AGE` | no (prod only) | `require` / `60` | DB TLS and connection reuse |
 | `SECURE_SSL_REDIRECT` | no (prod only) | `True` | `False` only behind plain HTTP (compose) |
 

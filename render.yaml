@@ -28,11 +28,12 @@ services:
         value: ""
       - key: CSRF_TRUSTED_ORIGINS # extra origins only; https://<onrender host> is added automatically
         value: ""
-      # Measured on the live service: X-Forwarded-For arrives as
-      # "<client>, <Cloudflare edge>, <Render internal 10.x>"; both proxy entries change
-      # per request. DRF takes the NUM_PROXIES-th entry from the right, so 3 = the client.
-      # (1 and 2 were tried first and never throttled; see docs/deploy.md section 4.)
+      # MEASURED on the live Starter service (2026-11-17): X-Forwarded-For arrives as
+      # "<client>, <Cloudflare edge>" and REMOTE_ADDR is a rotating Render-internal 10.x.
+      # DRF takes the NUM_PROXIES-th entry from the right, so 2 = the client, and forged
+      # left-most entries are ignored. The free plan had one more hop (3 was right there),
+      # so re-measure after ANY plan or platform change (docs/decisions.md D27, D29).
       - key: NUM_PROXIES
-        value: "3"
+        value: "2"
       - key: DB_CONN_MAX_AGE
         value: "60"

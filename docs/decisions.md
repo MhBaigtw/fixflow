@@ -203,3 +203,13 @@ Each entry gives the choice, the alternatives considered and the reason.
   - Keep Neon and leave readiness as the probe: impossible within the free quota on an always-on service.
   - Neon's paid plan: Humayun chose a free database.
   - Supabase direct connection: Supabase's docs say it needs IPv6 or the paid IPv4 add-on, and recommend the session pooler for persistent backends on IPv4. Humayun chose the session pooler; I didn't test Render's IPv6 egress.
+
+## D29. `NUM_PROXIES=2` on Render Starter (re-measured after the plan change)
+- **What happened:** after the upgrade to Starter, 11 failed logins with forged `X-Forwarded-For` values were never throttled. The per-user write throttle still worked (60 × 409, then 429), so the shared cache was fine.
+- **Measured** with the same temporary login-only diagnostic as D27 (live for one deploy, then removed):
+  - Starter: `X-Forwarded-For = <client>, <Cloudflare edge>`, `REMOTE_ADDR = <rotating Render-internal 10.x>`.
+  - Free plan: `X-Forwarded-For = <client>, <Cloudflare>, <Render internal>`, `REMOTE_ADDR = 127.0.0.1`. The Render-internal hop moved from `X-Forwarded-For` into `REMOTE_ADDR`.
+- **Why 3 broke:** with 3 and a 2-entry chain, DRF uses the left-most entry. Honest requests still resolved to the client, which is why ordinary use looked fine, but a forged value prepended on the left became the key (`throttle_ident: 6.6.6.6`). An attacker rotating fake IPs was never limited.
+- **Choice:** `NUM_PROXIES=2`, the client in both the honest and the forged case.
+- **Regression tests:** `test_render_starter_chain_keys_on_real_client` and `test_too_many_proxies_lets_forged_header_dodge_the_limit` (the bug itself).
+- **Lesson:** the hop count is platform configuration, not a constant. It's documented in `render.yaml`, CLAUDE.md and docs/deploy.md as "re-measure after any plan or platform change". `CF-Connecting-IP` (equal to the client in both measurements) remains the alternative from D27, still not adopted for the same reason.

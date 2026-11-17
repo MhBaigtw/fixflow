@@ -67,45 +67,46 @@ def test_behind_one_proxy_client_ip_comes_from_forwarded_for(anon, low_rates, se
     assert resp.status_code == 200
 
 
-def test_render_chain_keys_on_real_client(anon, low_rates, settings):
-    """The X-Forwarded-For shape measured on the live Render service:
-    "<client>, <Cloudflare edge>, <Render internal>", with both proxy hops changing on
-    every request and REMOTE_ADDR=127.0.0.1. NUM_PROXIES=3 must pick the client, even
-    when the caller prepends forged entries."""
-    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 3}
+def starter_chain(i, forged=None):
+    """X-Forwarded-For as measured on the live Render Starter service (2026-11-17):
+    "<client>, <Cloudflare edge>", with REMOTE_ADDR = a rotating Render-internal 10.x
+    address. A caller-supplied value is prepended on the left."""
+    hops = f"203.0.113.7, 172.70.0.{i}"
+    return (f"{forged},{hops}" if forged else hops), f"10.199.0.{i}"
+
+
+def test_render_starter_chain_keys_on_real_client(anon, low_rates, settings):
+    """NUM_PROXIES=2 picks the client even with forged prefixes and rotating proxies."""
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 2}
     user = TenantFactory()
-
-    def chain(i, forged=None):
-        hops = f"203.0.113.7, 172.71.0.{i}, 10.192.0.{i}"
-        return f"{forged}, {hops}" if forged else hops
-
     for i in range(3):
-        login(
-            anon, user.email, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=chain(i, f"6.6.6.{i}")
-        )
-    assert_throttled(
-        login(anon, user.email, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=chain(9))
-    )
+        xff, remote = starter_chain(i, forged=f"6.6.6.{i}")
+        login(anon, user.email, REMOTE_ADDR=remote, HTTP_X_FORWARDED_FOR=xff)
+    xff, remote = starter_chain(9)
+    assert_throttled(login(anon, user.email, REMOTE_ADDR=remote, HTTP_X_FORWARDED_FOR=xff))
     # A different real client behind the same proxies is unaffected.
-    other = "198.51.100.9, 172.71.0.1, 10.192.0.1"
-    resp = login(anon, user.email, PASSWORD, REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=other)
+    resp = login(
+        anon,
+        user.email,
+        PASSWORD,
+        REMOTE_ADDR="10.199.0.1",
+        HTTP_X_FORWARDED_FOR="198.51.100.9, 172.70.0.1",
+    )
     assert resp.status_code == 200
 
 
-def test_too_few_proxies_lets_rotating_hops_dodge_the_limit(anon, low_rates, settings):
-    """Documents the production bug: with NUM_PROXIES=2 the key is the Cloudflare hop,
-    which changes per request, so the limit never triggers."""
-    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 2}
+def test_too_many_proxies_lets_forged_header_dodge_the_limit(anon, low_rates, settings):
+    """Documents the 2026-11-17 production bug: the free plan's chain had one more hop,
+    so NUM_PROXIES=3 was right there. On Starter it makes DRF key on the forged
+    left-most entry, and a fresh fake IP per request never hits the limit."""
+    settings.REST_FRAMEWORK = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 3}
     user = TenantFactory()
-    codes = [
-        login(
-            anon,
-            user.email,
-            REMOTE_ADDR="127.0.0.1",
-            HTTP_X_FORWARDED_FOR=f"203.0.113.7, 172.71.0.{i}, 10.192.0.{i}",
-        ).status_code
-        for i in range(5)
-    ]
+    codes = []
+    for i in range(5):
+        xff, remote = starter_chain(i, forged=f"6.6.6.{i}")
+        codes.append(
+            login(anon, user.email, REMOTE_ADDR=remote, HTTP_X_FORWARDED_FOR=xff).status_code
+        )
     assert 429 not in codes
 
 
