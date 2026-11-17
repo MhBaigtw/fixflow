@@ -92,4 +92,5 @@
 - [x] Docs: README, deploy.md, decisions D28
 - [x] Full checks, push (ask), CI green (run 44041196031)
 - [x] Live verification after deploy (health, docs, walkthrough OK)
-- [ ] Per-IP login throttle regressed on Starter: re-measure proxy chain, set NUM_PROXIES
+- [x] Per-IP login throttle regressed on Starter: re-measured, NUM_PROXIES=2, re-verified live (D29)
+- [x] Daily keep-alive workflow for Supabase pausing

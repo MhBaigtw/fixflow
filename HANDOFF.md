@@ -328,7 +328,17 @@ in_progress->resolved (2) · resolved->closed (4)
 
 **Throttles:**
 - **Write (per user):** 62 no-op PATCHes gave `409 x 60, 429 x 2`, `retry_after_seconds: 40`. Works, so the database cache works on Supabase.
-- **Login (per IP): REGRESSION.** 11 failed logins with forged `X-Forwarded-For` and 1 plain follow-up all returned `401`, with no 429. On the free plan the same check returned 429 on the 11th attempt. The Starter plan's proxy chain must differ, so `NUM_PROXIES=3` no longer selects the client. **Not fixed in this change**; it needs a measurement (see below).
+- **Login (per IP): regression found, then fixed the same day.**
+  1. **With `NUM_PROXIES=3`:** 11 forged-header failed logins and 1 plain follow-up all returned `401`, with no 429.
+  2. **Measured** with the temporary login-only diagnostic (deployed in `69d3a99`, removed in `24f0e9d`): on Starter, `X-Forwarded-For = <client>, <Cloudflare edge>` and `REMOTE_ADDR = <rotating Render-internal 10.x>`, one hop fewer than on the free plan. With 3, DRF keyed on the forged left-most entry (`throttle_ident: 6.6.6.6`); honest requests still resolved correctly.
+  3. **Fix:** `NUM_PROXIES=2` (`24f0e9d`, decision D29). CI run 44045091890: 391 passed, 99.66%.
+  4. **Re-test after the deploy went live** (08:17 UTC):
+     ```
+     forged-XFF logins: 401 401 401 401 401 401 401 401 401 401 429
+     {"error":{"code":"throttled","message":"Request was throttled. Expected available in 51 seconds.","details":{"retry_after_seconds":51}}}
+     plain follow-up: HTTP/1.1 429 Too Many Requests, retry-after: 50
+     /api/health/live/ 200 {"status":"ok"} · /api/health/ 200 {"status":"ok","database":"ok"} · /api/docs/ 200
+     ```
 
 ## Supabase session pooler check (task 3)
 - **`sslmode=require`:** accepted. Readiness reported `database: ok` before and after this deploy, with `prod.py` forcing `require`.
@@ -337,7 +347,22 @@ in_progress->resolved (2) · resolved->closed (4)
 - **Transaction pooler (6543):** must not be used; `prod.py` refuses it.
 
 ## Known gaps / risks
-1. **Per-IP login throttle not working on Starter** (above).
+1. **Per-IP login throttle:** fixed (`NUM_PROXIES=2`, re-verified live). The hop count depends on the Render plan, so re-measure after any plan change (D29).
 2. **Supabase pause risk:** Free projects pause after 1 week of inactivity, and Render's probe no longer touches the database. A quiet week could pause the project. **Mitigation added:** a daily keep-alive workflow (`.github/workflows/keepalive.yml`).
 3. **The first deploy attempt failed** after 15 minutes; cause unknown (above).
 4. **`docs/deploy.md` section 5** (kept unchanged as instructed) still says "reset the Neon branch" for wiping demo data. On Supabase that would be a database reset in the Supabase dashboard.
+
+## Commits in this update
+```
+24f0e9d fix(deploy): NUM_PROXIES=2 on Render Starter (re-measured) and remove the temporary diagnostic
+69d3a99 chore(diag): re-add temporary client-IP diagnostic; add daily DB keep-alive workflow
+d16d0b7 docs: record Supabase live verification, deploy history and the login-throttle regression
+41165f9 fix(deploy): DB-free liveness check for Render; document Neon -> Supabase session pooler
+```
+The keep-alive workflow (`keepalive.yml`) runs daily at 09:17 UTC; its first scheduled run hadn't happened when this was written. It can be started by hand from the Actions tab (**Keep database active** → **Run workflow**).
+
+## Actions for Humayun (dashboard only; I can't see these)
+1. **Render → fixflow → Settings:** confirm **Health Check Path** = `/api/health/live/` and the plan is **Starter**. Then **Environment:** confirm `NUM_PROXIES` = **2**. These come from the Blueprint sync, and I can only infer them from behaviour.
+2. **Render → fixflow → Events:** the first deploy of `41165f9` failed after 15 minutes. Its log would show why (a later deploy of the same commit succeeded).
+3. **Neon:** the old project still exists. Delete it or keep it; your call.
+4. **Optional:** Actions → **Keep database active** → **Run workflow**, once, to see it pass.
